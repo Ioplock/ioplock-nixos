@@ -35,7 +35,8 @@
     imports = [wlib.wrapperModules.zsh];
 
     env = {
-      EDITOR = "nano";
+      # TODO: Replace this basic Neovim with a configured wrapper-modules build.
+      EDITOR = lib.getExe pkgs.neovim;
       MANPAGER = "sh -c 'col -bx | bat --language=man --plain'";
       PAGER = "less -FRX";
       STARSHIP_CONFIG = "${starshipConfig}";
@@ -62,6 +63,7 @@
       lazygit
       less
       nano
+      neovim
       nh
       nil
       nix-output-monitor
