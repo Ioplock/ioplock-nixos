@@ -4,6 +4,7 @@
     # import any other modules from here
     imports = [
       self.nixosModules.acruxHardware
+      self.nixosModules.docker
       self.nixosModules.ssh
       self.nixosModules.shell
       self.nixosModules.niri
@@ -17,8 +18,6 @@
 
     environment.systemPackages = with pkgs; [
       home-manager
-      docker
-      docker-compose
     ];
 
     # ==================================================
@@ -87,13 +86,6 @@
     # TODO: Replace Blueman with Bluetooth controls provided by a custom desktop shell.
     services.blueman.enable = true;
 
-    # ==================================================
-    # Docker
-    # ==================================================
-    virtualisation.docker.rootless = { # TODO: Maybe replace with podman (https://github.com/vimjoyer/nixconf/blob/421795866265554d9ca5f2c7b658aac80d9ab0f9/nixos/hosts/main/configuration.nix#L59)
-      enable = true;
-      setSocketVariable = true; # exports DOCKER_HOST for you
-    };
   };
 
 }
