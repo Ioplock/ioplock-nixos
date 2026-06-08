@@ -84,7 +84,8 @@
     # ==================================================
     hardware.bluetooth.enable = true;
     hardware.bluetooth.powerOnBoot = false;
-    services.blueman.enable = true; # TODO: Search for alternatives or make own shell (For future ref this is graphical interface for bluetooth)
+    # TODO: Replace Blueman with Bluetooth controls provided by a custom desktop shell.
+    services.blueman.enable = true;
 
     # ==================================================
     # Docker
