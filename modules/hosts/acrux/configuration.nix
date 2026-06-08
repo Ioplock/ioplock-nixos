@@ -4,6 +4,7 @@
     # import any other modules from here
     imports = [
       self.nixosModules.acruxHardware
+      self.nixosModules.audio
       self.nixosModules.docker
       self.nixosModules.ssh
       self.nixosModules.shell
@@ -59,20 +60,8 @@
     services.libinput.enable = true;
 
     # ==================================================
-    # Audio
-    # ==================================================
-    security.rtkit.enable = true;
-    services.pipewire = {
-      enable = true;
-      alsa.enable = true;
-      alsa.support32Bit = true;
-      pulse.enable = true;
-    };
-
-    # ==================================================
     # Video
     # ==================================================
-
     hardware.graphics = {
       enable = true;
       enable32Bit = true; # Highly recommended for gaming/Steam
@@ -85,7 +74,6 @@
     hardware.bluetooth.powerOnBoot = false;
     # TODO: Replace Blueman with Bluetooth controls provided by a custom desktop shell.
     services.blueman.enable = true;
-
   };
 
 }
