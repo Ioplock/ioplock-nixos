@@ -71,23 +71,8 @@
     };
 
     # ==================================================
-    # Video # TODO: Research this whole section
+    # Video
     # ==================================================
-    xdg.portal = {
-      enable = true;
-      # Use the GTK portal for file pickers and general UI
-      extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
-      
-      config = {
-        common = {
-          # Use the GTK portal as the default for everything
-          default = [ "gtk" ];
-        };
-      };
-    };
-
-    services.xserver.videoDrivers = ["amdgpu"];
-    boot.initrd.kernelModules = ["amdgpu"];
 
     hardware.graphics = {
       enable = true;
