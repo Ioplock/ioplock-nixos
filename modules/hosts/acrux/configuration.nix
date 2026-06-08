@@ -4,6 +4,7 @@
     # import any other modules from here
     imports = [
       self.nixosModules.acruxHardware
+      self.nixosModules.shell
       self.nixosModules.niri
     ];
 
@@ -56,10 +57,6 @@
     # ==================================================
     # Users
     # ==================================================
-    environment.shells = with pkgs; [ bash zsh ]; # TODO: Move to feature and make actual configs and stuff
-    users.defaultUserShell = pkgs.zsh;
-    programs.zsh.enable = true;
-
     # Define a user account. Don't forget to set a password with 'passwd'.
     users.users.ioplock = {
       isNormalUser = true;
