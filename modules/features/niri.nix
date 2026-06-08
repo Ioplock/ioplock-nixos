@@ -1,9 +1,11 @@
 { self, inputs, ... }: {
-  flake.nixosModules.niri = { pkgs, lib, ... }: {
+  flake.nixosModules.niri = { config, pkgs, lib, ... }: {
     programs.niri = {
       enable = true;
       package = self.packages.${pkgs.stdenv.hostPlatform.system}.myNiri;
     };
+
+    programs.uwsm.enable = true;
 
     environment.sessionVariables = {
       # Fix for Chromium/Electron apps (VS Code, Discord, etc.)
@@ -26,7 +28,7 @@
       enable = true;
       settings = rec {
         initial_session = {
-          command = "uwsm start niri.desktop";
+          command = "${lib.getExe config.programs.uwsm.package} start -- niri.desktop";
           user = "ioplock";
         };
         default_session = initial_session;
