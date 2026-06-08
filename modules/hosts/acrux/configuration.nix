@@ -4,6 +4,7 @@
     # import any other modules from here
     imports = [
       self.nixosModules.acruxHardware
+      self.nixosModules.ssh
       self.nixosModules.shell
       self.nixosModules.niri
     ];
@@ -40,18 +41,6 @@
     networking.firewall = {
       enable = true;
       allowedTCPPorts = [ 22 5432 27017 80 8080 ]; # allow forwarded port
-    };
-
-    # ==================================================
-    # SSH
-    # ==================================================
-    # Enable this for vscode-server
-    programs.nix-ld.enable = true; # TODO: Check if there a better way to do this
-
-    # Ssh support with default port 22
-    services.openssh = {
-      enable = true;
-      ports = [ 22 ];
     };
 
     # ==================================================
