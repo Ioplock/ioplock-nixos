@@ -9,6 +9,7 @@
       self.nixosModules.ssh
       self.nixosModules.shell
       self.nixosModules.niri
+      self.nixosModules.vscode
     ];
 
     # ==================================================
