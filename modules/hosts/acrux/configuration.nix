@@ -6,6 +6,7 @@
       self.nixosModules.acruxHardware
       self.nixosModules.audio
       self.nixosModules.docker
+      self.nixosModules.firefox
       self.nixosModules.rofi
       self.nixosModules.ssh
       self.nixosModules.shell
