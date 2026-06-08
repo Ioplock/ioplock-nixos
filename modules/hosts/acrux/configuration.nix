@@ -52,7 +52,7 @@
     # Define a user account. Don't forget to set a password with 'passwd'.
     users.users.ioplock = {
       isNormalUser = true;
-      extraGroups = [ "wheel" "input" "networkmanager" "docker" ]; # Enable 'sudo' for the user.
+      extraGroups = [ "wheel" "input" "video" "networkmanager" "docker" ]; # Enable 'sudo' for the user.
       linger = true;
     };
 
