@@ -51,6 +51,7 @@
 
         binds = {
           "Mod+Return".spawn-sh = lib.getExe pkgs.ghostty;
+          "Mod+Space".spawn-sh = "${lib.getExe self'.packages.myRofi} -show drun";
           "Mod+Q".close-window = _: {};
           # "Mod+S".spawn-sh = "${lib.getExe self'.packages.myNoctalia} ipc call launcher toggle";
         };
