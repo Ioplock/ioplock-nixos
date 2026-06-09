@@ -49,6 +49,8 @@
       #   (lib.getExe self'.packages.myNoctalia)
       # ];
 
+      prefer-no-csd = true;
+
       xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
 
       input = {
@@ -92,8 +94,15 @@
       };
 
       binds = {
-        "Mod+Return".spawn-sh = terminal;
-        "Mod+Space".spawn-sh = "${lib.getExe self'.packages.myRofi} -show drun";
+        "Mod+Return" = _: {
+          props.hotkey-overlay-title = "Open Terminal";
+          content.spawn-sh = terminal;
+        };
+        "Mod+Space" = _: {
+          props.hotkey-overlay-title = "Open Application Launcher";
+          content.spawn-sh = "${lib.getExe self'.packages.myRofi} -show drun";
+        };
+        "Mod+Shift+Slash".show-hotkey-overlay = _: {};
         "Mod+Q".close-window = _: {};
 
         "Mod+H".focus-column-left = _: {};
