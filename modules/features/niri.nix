@@ -51,6 +51,8 @@
 
       prefer-no-csd = true;
 
+      hotkey-overlay.skip-at-startup = _: {};
+
       xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
 
       input = {
@@ -115,10 +117,28 @@
         "Mod+Shift+K".move-window-up = _: {};
         "Mod+Shift+J".move-window-down = _: {};
 
+        "Mod+U".focus-workspace-down = _: {};
+        "Mod+I".focus-workspace-up = _: {};
+        "Mod+Ctrl+Shift+J".move-column-to-workspace-down = _: {};
+        "Mod+Ctrl+Shift+K".move-column-to-workspace-up = _: {};
+
         "Mod+Ctrl+H".set-column-width = "-5%";
         "Mod+Ctrl+L".set-column-width = "+5%";
         "Mod+Ctrl+J".set-window-height = "-5%";
         "Mod+Ctrl+K".set-window-height = "+5%";
+
+        "Mod+R".switch-preset-column-width = _: {};
+        "Mod+Shift+R".switch-preset-window-height = _: {};
+        "Mod+F".maximize-column = _: {};
+        "Mod+BracketLeft".consume-or-expel-window-left = _: {};
+        "Mod+BracketRight".consume-or-expel-window-right = _: {};
+        "Mod+Ctrl+V".toggle-window-floating = _: {};
+        "Mod+Ctrl+Shift+V".switch-focus-between-floating-and-tiling = _: {};
+        "Mod+Grave" = _: {
+          props.repeat = false;
+          content.toggle-overview = _: {};
+        };
+        "Mod+Ctrl+Shift+E".quit = _: {};
 
         "Mod+1".focus-workspace = "w0";
         "Mod+2".focus-workspace = "w1";
@@ -142,13 +162,31 @@
         "Mod+Shift+9".move-column-to-workspace = "w8";
         "Mod+Shift+0".move-column-to-workspace = "w9";
 
-        "XF86AudioRaiseVolume".spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-volume -l 1.4 @DEFAULT_AUDIO_SINK@ 5%+";
-        "XF86AudioLowerVolume".spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-volume -l 1.4 @DEFAULT_AUDIO_SINK@ 5%-";
-        "XF86AudioMute".spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-mute @DEFAULT_AUDIO_SINK@ toggle";
-        "XF86AudioMicMute".spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-mute @DEFAULT_AUDIO_SOURCE@ toggle";
+        "XF86AudioRaiseVolume" = _: {
+          props.allow-when-locked = true;
+          content.spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-volume -l 1.4 @DEFAULT_AUDIO_SINK@ 5%+";
+        };
+        "XF86AudioLowerVolume" = _: {
+          props.allow-when-locked = true;
+          content.spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-volume -l 1.4 @DEFAULT_AUDIO_SINK@ 5%-";
+        };
+        "XF86AudioMute" = _: {
+          props.allow-when-locked = true;
+          content.spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-mute @DEFAULT_AUDIO_SINK@ toggle";
+        };
+        "XF86AudioMicMute" = _: {
+          props.allow-when-locked = true;
+          content.spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-mute @DEFAULT_AUDIO_SOURCE@ toggle";
+        };
 
-        "Mod+bracketleft".spawn-sh = "${lib.getExe pkgs.brightnessctl} set 5%-";
-        "Mod+bracketright".spawn-sh = "${lib.getExe pkgs.brightnessctl} set 5%+";
+        "XF86MonBrightnessDown" = _: {
+          props.allow-when-locked = true;
+          content.spawn-sh = "${lib.getExe pkgs.brightnessctl} set 5%-";
+        };
+        "XF86MonBrightnessUp" = _: {
+          props.allow-when-locked = true;
+          content.spawn-sh = "${lib.getExe pkgs.brightnessctl} set 5%+";
+        };
         # "Mod+S".spawn-sh = "${lib.getExe self'.packages.myNoctalia} ipc call launcher toggle";
       };
     };
@@ -156,9 +194,11 @@
     packages.myGhostty = inputs.wrapper-modules.lib.wrapPackage {
       inherit pkgs;
       package = pkgs.ghostty;
+      flagSeparator = "=";
 
       flags = {
         "--command" = "direct:${lib.getExe self'.packages.myShellEnv}";
+        "--confirm-close-surface" = "false";
         "--shell-integration" = "zsh";
       };
     };
