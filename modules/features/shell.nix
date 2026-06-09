@@ -56,7 +56,6 @@
       fd
       fzf
       gh
-      git
       hyperfine
       jq
       just
@@ -116,7 +115,11 @@
       HISTFILE="$HOME/.zsh_history"
 
       autoload -Uz compinit
-      compinit -d "$HOME/.zcompdump-$ZSH_VERSION"
+      if [[ -f "$HOME/.zcompdump-$ZSH_VERSION" ]]; then
+        compinit -C -d "$HOME/.zcompdump-$ZSH_VERSION"
+      else
+        compinit -d "$HOME/.zcompdump-$ZSH_VERSION"
+      fi
 
       source ${pkgs.fzf}/share/fzf/completion.zsh
       source ${pkgs.fzf}/share/fzf/key-bindings.zsh
@@ -134,7 +137,11 @@
   };
 
   flake.nixosModules.shell = {pkgs, ...}: {
-    programs.zsh.enable = true;
+    programs.zsh = {
+      enable = true;
+      enableGlobalCompInit = false;
+      promptInit = "";
+    };
     environment.pathsToLink = ["/share/zsh"];
 
     environment.shells = [
@@ -163,6 +170,7 @@
     packages.myShellEnv = inputs.wrapper-modules.lib.wrapPackage {
       inherit pkgs;
       package = self'.packages.myZsh;
+      extraPackages = [self'.packages.myGit];
       passthru.shellPath = self'.packages.myZsh.shellPath;
     };
   };
