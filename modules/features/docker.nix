@@ -1,13 +1,16 @@
-{ self, inputs, ... }: {
-  flake.nixosModules.docker = { pkgs, ... }: {
-    environment.systemPackages = with pkgs; [
-      docker
-      docker-compose
-    ];
+{ self, inputs, ... }:
+{
+  flake.nixosModules.docker =
+    { pkgs, ... }:
+    {
+      environment.systemPackages = with pkgs; [
+        docker
+        docker-compose
+      ];
 
-    virtualisation.docker.rootless = {
-      enable = true;
-      setSocketVariable = true;
+      virtualisation.docker.rootless = {
+        enable = true;
+        setSocketVariable = true;
+      };
     };
-  };
 }

@@ -1,52 +1,59 @@
-{ self, inputs, ... }: {
-  flake.wrappers.quickshell = {
-    config,
-    lib,
-    pkgs,
-    wlib,
-    ...
-  }: {
-    imports = [ wlib.modules.default ];
+{ self, inputs, ... }:
+{
+  flake.wrappers.quickshell =
+    {
+      config,
+      lib,
+      pkgs,
+      wlib,
+      ...
+    }:
+    {
+      imports = [ wlib.modules.default ];
 
-    options.configPath = lib.mkOption {
-      type = lib.types.path;
-      default = ./.;
-      description = "Path to the Quickshell configuration directory.";
+      options.configPath = lib.mkOption {
+        type = lib.types.path;
+        default = ./.;
+        description = "Path to the Quickshell configuration directory.";
+      };
+
+      config = {
+        package = pkgs.quickshell;
+        binName = "quickshell-status-bar";
+        flags."--path" = config.configPath;
+      };
     };
 
-    config = {
-      package = pkgs.quickshell;
-      binName = "quickshell-status-bar";
-      flags."--path" = config.configPath;
-    };
-  };
-
-  flake.nixosModules.quickshell = { pkgs, ... }: {
-    environment.systemPackages = [
-      self.packages.${pkgs.stdenv.hostPlatform.system}.myQuickshell
-    ];
-  };
-
-  perSystem = { pkgs, self', ... }: {
-    packages.myQuickshellStatus = pkgs.writeShellApplication {
-      name = "quickshell-status";
-      runtimeInputs = with pkgs; [
-        bluez
-        coreutils
-        gawk
-        jq
-        networkmanager
-        niri
-        wireplumber
+  flake.nixosModules.quickshell =
+    { pkgs, ... }:
+    {
+      environment.systemPackages = [
+        self.packages.${pkgs.stdenv.hostPlatform.system}.myQuickshell
       ];
-      text = builtins.readFile ./status.sh;
     };
 
-    packages.myQuickshell = inputs.wrapper-modules.lib.wrapPackage {
-      inherit pkgs;
-      imports = [ self.wrapperModules.quickshell ];
-      configPath = ./.;
-      extraPackages = [ self'.packages.myQuickshellStatus ];
+  perSystem =
+    { pkgs, self', ... }:
+    {
+      packages.myQuickshellStatus = pkgs.writeShellApplication {
+        name = "quickshell-status";
+        runtimeInputs = with pkgs; [
+          bluez
+          coreutils
+          gawk
+          jq
+          networkmanager
+          niri
+          wireplumber
+        ];
+        text = builtins.readFile ./status.sh;
+      };
+
+      packages.myQuickshell = inputs.wrapper-modules.lib.wrapPackage {
+        inherit pkgs;
+        imports = [ self.wrapperModules.quickshell ];
+        configPath = ./.;
+        extraPackages = [ self'.packages.myQuickshellStatus ];
+      };
     };
-  };
 }
