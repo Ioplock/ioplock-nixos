@@ -45,9 +45,9 @@
 
   perSystem = { pkgs, lib, self', ... }: let
     settings = terminal: {
-      # spawn-at-startup = [
-      #   (lib.getExe self'.packages.myNoctalia)
-      # ];
+      spawn-at-startup = [
+        (lib.getExe self'.packages.myQuickshell)
+      ];
 
       prefer-no-csd = true;
 

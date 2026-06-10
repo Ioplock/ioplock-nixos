@@ -9,6 +9,7 @@
       self.nixosModules.docker
       self.nixosModules.firefox
       self.nixosModules.git
+      self.nixosModules.quickshell
       self.nixosModules.rofi
       self.nixosModules.ssh
       self.nixosModules.shell
