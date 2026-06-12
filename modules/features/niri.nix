@@ -19,6 +19,11 @@
 
       programs.uwsm.enable = true;
 
+      xdg.portal = {
+        enable = true;
+        extraPortals = [ pkgs.xdg-desktop-portal-gnome ];
+      };
+
       services.udev.packages = [ pkgs.brightnessctl ];
 
       environment.sessionVariables = {
@@ -203,6 +208,9 @@
             content.spawn-sh = "${lib.getExe pkgs.brightnessctl} set 5%+";
           };
           # "Mod+S".spawn-sh = "${lib.getExe self'.packages.myNoctalia} ipc call launcher toggle";
+          "Print" = _: {
+            content.screenshot = _: { };
+          };
         };
       };
     in
