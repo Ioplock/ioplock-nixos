@@ -5,8 +5,9 @@
 }:
 {
   flake.nixosModules.nh =
-    { config, pkgs, ... }:
+    { config, pkgs, lib, ... }:
     {
+      system.nixos.label = lib.maybeEnv "NIXOS_LABEL" config.system.nixos.version;
       programs.nh = {
         enable = true;
         package = self.packages.${pkgs.stdenv.hostPlatform.system}.myNh;
@@ -14,7 +15,7 @@
     };
 
   perSystem =
-    { pkgs, self', ... }:
+    { pkgs, lib, self', ... }:
     {
       packages.generateLabel = pkgs.writeShellApplication {
         name = "generate-label";
@@ -40,11 +41,9 @@
         runShell = [
           ''
             export NIXOS_LABEL=$(generate-label 2>/dev/null || echo "unknown")
+            exec ${lib.getExe pkgs.nh} "$@" -- --impure
           ''
         ];
-        env = {
-          NIX_CONFIG = "pure-eval = false";
-        };
       };
     };
 }
