@@ -209,7 +209,20 @@
           };
           # "Mod+S".spawn-sh = "${lib.getExe self'.packages.myNoctalia} ipc call launcher toggle";
           "Print" = _: {
+            props.hotkey-overlay-title = "Screenshot Full Screen";
+            content.screenshot-screen = _: { };
+          };
+          "Shift+Print" = _: {
+            props.hotkey-overlay-title = "Screenshot Window";
+            content.screenshot-window = _: { };
+          };
+          "Ctrl+Print" = _: {
+            props.hotkey-overlay-title = "Screenshot Interactive";
             content.screenshot = _: { };
+          };
+          "Mod+V" = _: {
+            props.hotkey-overlay-title = "Clipboard History";
+            content.spawn-sh = lib.getExe self'.packages.myCliphistRofi;
           };
         };
       };

@@ -84,6 +84,9 @@
         zoxide
         zsh-autosuggestions
         zsh-syntax-highlighting
+        wl-clipboard
+        cliphist
+        self.packages.${pkgs.stdenv.hostPlatform.system}.myCliphistRofi
       ];
 
       zshAliases = {
@@ -101,6 +104,7 @@
         df = "duf";
         lg = "lazygit";
         g = "git";
+        f = "yazi";
         ".." = "cd ..";
         "..." = "cd ../..";
         rebuild-check = "nix flake check && nixos-rebuild dry-build --flake .#acrux";
