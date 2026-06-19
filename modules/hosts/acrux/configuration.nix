@@ -19,11 +19,13 @@
         self.nixosModules.shell
         self.nixosModules.niri
         self.nixosModules.vscode
+        self.nixosModules.yazi
       ];
 
       # ==================================================
       # System
       # ==================================================
+      nixpkgs.config.allowUnfree = true;
       nix.settings.experimental-features = [
         "nix-command"
         "flakes"
