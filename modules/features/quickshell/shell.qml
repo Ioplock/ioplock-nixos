@@ -9,21 +9,40 @@ ShellRoot {
     property var status: ["?", "Desktop", "unknown", "unknown", "disconnected", "off", "AC"]
     property date dateTime: new Date()
 
+    Settings {
+        id: appSettings
+    }
+
+    SettingsWindow {
+        id: settingsWindow
+        appSettings: appSettings
+    }
+
     Variants {
+        id: barVariants
         model: Quickshell.screens
 
         delegate: PanelWindow {
+            id: bar
             required property var modelData
 
+            property var appSettingsRef: appSettings
+
             screen: modelData
-            color: "#1e1e2e"
-            implicitHeight: 34
+            color: appSettingsRef.barColor
+            implicitHeight: appSettingsRef.barHeight
             exclusiveZone: implicitHeight
 
             anchors {
                 top: true
                 left: true
                 right: true
+            }
+
+            WifiMenu {
+                id: wifiMenu
+                appSettings: appSettingsRef
+                barWindow: bar
             }
 
             Process {
@@ -52,9 +71,43 @@ ShellRoot {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 12
+                anchors.leftMargin: 8
                 anchors.rightMargin: 12
-                spacing: 12
+                spacing: 8
+
+                Rectangle {
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                    Layout.alignment: Qt.AlignVCenter
+                    radius: 4
+                    color: settingsArea.containsMouse ? Qt.lighter(appSettingsRef.barColor, 1.4) : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "\u2699"
+                        font.pixelSize: 16
+                        color: appSettingsRef.textColor
+                        opacity: settingsArea.containsMouse ? 1.0 : 0.7
+                    }
+
+                    MouseArea {
+                        id: settingsArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            settingsWindow.visible = !settingsWindow.visible
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: 16
+                    Layout.alignment: Qt.AlignVCenter
+                    color: appSettingsRef.accentColor
+                    opacity: 0.3
+                }
 
                 Item {
                     Layout.fillWidth: true
@@ -66,6 +119,7 @@ ShellRoot {
                         width: parent.width
                         elide: Text.ElideRight
                         text: root.status[0] + "  " + root.status[1]
+                        appSettings: appSettingsRef
                     }
                 }
 
@@ -75,7 +129,8 @@ ShellRoot {
 
                     StatusText {
                         anchors.centerIn: parent
-                        text: Qt.formatDateTime(root.dateTime, "ddd, dd MMM  HH:mm")
+                        text: Qt.formatDateTime(root.dateTime, appSettingsRef.clockFormat)
+                        appSettings: appSettingsRef
                     }
 
                     Timer {
@@ -90,13 +145,87 @@ ShellRoot {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
-                    StatusText {
+                    Row {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.status[2] + "  |  vol " + root.status[3]
-                            + "  |  wifi " + root.status[4]
-                            + "  |  bt " + root.status[5]
-                            + "  |  bat " + root.status[6]
+                        spacing: 12
+
+                        StatusText {
+                            text: root.status[2]
+                            color: appSettingsRef.accentColor
+                            appSettings: appSettingsRef
+                        }
+
+                        StatusText {
+                            text: "\u2022"
+                            color: appSettingsRef.textColor
+                            opacity: 0.3
+                            appSettings: appSettingsRef
+                        }
+
+                        StatusText {
+                            text: "vol " + root.status[3]
+                            appSettings: appSettingsRef
+                        }
+
+                        StatusText {
+                            text: "\u2022"
+                            color: appSettingsRef.textColor
+                            opacity: 0.3
+                            appSettings: appSettingsRef
+                        }
+
+                        Rectangle {
+                            width: wifiText.implicitWidth + 8
+                            height: wifiText.implicitHeight + 4
+                            radius: 4
+                            color: wifiArea.containsMouse ? Qt.lighter(appSettingsRef.barColor, 1.4) : "transparent"
+
+                            StatusText {
+                                id: wifiText
+                                anchors.centerIn: parent
+                                text: "wifi " + root.status[4]
+                                color: wifiMenu.visible ? appSettingsRef.accentColor : appSettingsRef.textColor
+                                appSettings: appSettingsRef
+                            }
+
+                            MouseArea {
+                                id: wifiArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    wifiMenu.visible = !wifiMenu.visible
+                                    if (wifiMenu.visible) {
+                                        wifiMenu.refreshNetworks()
+                                    }
+                                }
+                            }
+                        }
+
+                        StatusText {
+                            text: "\u2022"
+                            color: appSettingsRef.textColor
+                            opacity: 0.3
+                            appSettings: appSettingsRef
+                        }
+
+                        StatusText {
+                            text: "bt " + root.status[5]
+                            appSettings: appSettingsRef
+                        }
+
+                        StatusText {
+                            text: "\u2022"
+                            color: appSettingsRef.textColor
+                            opacity: 0.3
+                            appSettings: appSettingsRef
+                        }
+
+                        StatusText {
+                            text: "bat " + root.status[6]
+                            appSettings: appSettingsRef
+                        }
                     }
                 }
             }
