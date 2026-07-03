@@ -9,6 +9,7 @@
         self.nixosModules.acruxHardware
         self.nixosModules.audio
         self.nixosModules.ayugram
+        self.nixosModules.cliphist
         self.nixosModules.docker
         self.nixosModules.firefox
         self.nixosModules.git
