@@ -16,6 +16,7 @@
         self.nixosModules.nh
         self.nixosModules.quickshell
         self.nixosModules.rofi
+        self.nixosModules.singBox
         self.nixosModules.sops
         self.nixosModules.ssh
         self.nixosModules.shell
