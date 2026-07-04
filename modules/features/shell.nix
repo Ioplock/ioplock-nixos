@@ -140,6 +140,16 @@
           eval "$(${lib.getExe pkgs.direnv} hook zsh)"
         fi
 
+        # Ghostty shell integration. Auto-injection is disabled on the ghostty
+        # wrapper (--shell-integration=none) because it conflicts with the
+        # wrapped zsh's ZDOTDIR, so we source the integration script manually
+        # here. The guard makes this a no-op outside of ghostty. The script
+        # reorders its own precmd hook to run last, so sourcing it before
+        # zsh-syntax-highlighting (which recommends being sourced last) is safe.
+        if [[ -n "$GHOSTTY_RESOURCES_DIR" ]]; then
+          source "$GHOSTTY_RESOURCES_DIR"/shell-integration/zsh/ghostty-integration
+        fi
+
         source ${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
       '';
     };

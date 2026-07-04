@@ -234,9 +234,15 @@
         flagSeparator = "=";
 
         flags = {
-          "--command" = "direct:${lib.getExe self'.packages.myShellEnv}";
-          "--confirm-close-surface" = "false";
-          "--shell-integration" = "zsh";
+          "--command" = lib.getExe self'.packages.myShellEnv;
+          # Auto zsh integration sets ZDOTDIR, which the wrapped zsh overrides
+          # via makeWrapper (its .zshrc lives in its own ZDOTDIR). That conflict
+          # breaks ghostty's prompt detection, making it always ask to confirm
+          # close. Instead, disable auto-injection and source ghostty's zsh
+          # integration manually from zshrc.content (guarded by
+          # $GHOSTTY_RESOURCES_DIR). The default confirm-close-surface=true then
+          # prompts only when a foreground process is actually running.
+          "--shell-integration" = "none";
         };
       };
 
