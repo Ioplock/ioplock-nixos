@@ -10,8 +10,9 @@
     in
     {
       # Custom sing-box build with the protocol support used by this host.
-      # No naive or WireGuard outbound is wired into the config yet; their
-      # build tags keep them available for later use.
+      # NaiveProxy's purego implementation remains enabled and keeps using the
+      # bundled Cronet shared library. Tor runs from the Nix-provided binary
+      # exposed at a stable runtime path by the service below.
       packages.mySingBox = pkgs.sing-box.overrideAttrs (old: {
         tags = lib.unique ((old.tags or [ ]) ++ [
           "with_naive_outbound"
@@ -144,7 +145,7 @@
       # /run/sing-box/config.json from `settings` (the public, typed config).
       # We drop the sops-decrypted outbounds next to it as outbounds.json, so
       # sing-box merges the secret outbounds array (vless-grpc, hysteria2,
-      # urltest proxy group) into the final config at runtime.
+      # Tor, and the urltest proxy group) into the final config at runtime.
       systemd.services.sing-box = {
         # Ensure sops has decrypted the secret before sing-box tries to read it.
         after = [ "sops-nix.service" ];
@@ -155,6 +156,18 @@
                 ${config.sops.secrets.sing-box-outbounds.path} \
                 /run/sing-box/outbounds.json
               chown sing-box:sing-box /run/sing-box/outbounds.json
+
+              # Keep the Tor pluggable-transport paths stable. The encrypted
+              # outbound can reference these runtime paths without embedding
+              # a Nix store hash that changes on package updates.
+              install -d -m 755 /run/sing-box/pt
+              ln -sfn ${pkgs.tor}/bin/tor /run/sing-box/pt/tor
+              ln -sfn ${lib.getExe pkgs.obfs4} /run/sing-box/pt/lyrebird
+              ln -sfn ${pkgs.snowflake}/bin/client /run/sing-box/pt/snowflake-client
+
+              # Tor persists state here; a persistent directory avoids a slow
+              # bootstrap every time sing-box is restarted.
+              install -d -m 700 -o sing-box -g sing-box /var/lib/sing-box/tor
             ''
           }"
         ];

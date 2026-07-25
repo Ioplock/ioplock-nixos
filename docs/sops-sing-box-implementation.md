@@ -1,8 +1,9 @@
 # sops-nix + sing-box Implementation Reference
 
-Everything you need to know to replicate, modify, or troubleshoot this
-setup. This covers the full chain: flake input → NixOS module → sops secrets
-→ sing-box runtime merge.
+This is the design reference for the running system: flake input → NixOS
+modules → SOPS secret → runtime merge → sing-box routing. For the ordered
+procedure to configure a fresh machine, use
+[`secrets-sing-box-setup.md`](secrets-sing-box-setup.md) instead.
 
 ---
 
@@ -17,10 +18,9 @@ setup. This covers the full chain: flake input → NixOS module → sops secrets
 7. [.sops.yaml — Recipient Configuration](#sopsyaml--recipient-configuration)
 8. [Secret Files](#secret-files)
 9. [Host Wiring](#host-wiring)
-10. [First-Time Setup Procedure](#first-time-setup-procedure)
-11. [Day-to-Day Secret Rotation](#day-to-day-secret-rotation)
-12. [Helper Packages](#helper-packages)
-13. [Troubleshooting](#troubleshooting)
+10. [Helper Packages](#helper-packages)
+11. [Troubleshooting](#troubleshooting)
+12. [Tor Runtime Design](#tor-runtime-design)
 
 ---
 
@@ -29,12 +29,13 @@ setup. This covers the full chain: flake input → NixOS module → sops secrets
 The setup uses a **split-config** pattern:
 
 - **Public config** (committed as plaintext Nix in `sing-box.nix`): DNS
-  servers, inbounds (socks :1080, http :8080), routing rules, Russian domain/IP
-  bypass via geoip/geosite rule sets. This lives in `services.sing-box.settings`.
+  servers, one mixed SOCKS/HTTP inbound on `127.0.0.1:1080`, routing rules,
+  Russian domain/IP bypass via geoip/geosite rule sets. This lives in
+  `services.sing-box.settings`.
 - **Secret config** (sops-encrypted JSON in `secrets/sing-box-outbounds.json`):
-  Actual proxy server details — vless-grpc, hysteria2, urltest proxy group,
-  direct, block outbounds. Encrypted at rest with AES256_GCM, decrypted by
-  age at activation time.
+  Actual proxy server details — vless-grpc, hysteria2, local SOCKS, the
+  bridge-ready Tor outbound, urltest proxy group, and direct/block outbounds.
+  Encrypted at rest with AES256_GCM, decrypted by age at activation time.
 - **Runtime merge**: sing-box runs with `-C /run/sing-box` (the nixpkgs
   module default). The nixpkgs module generates `/run/sing-box/config.json`
   from `settings`. An `ExecStartPre` script copies the sops-decrypted secret
@@ -91,6 +92,32 @@ The setup uses a **split-config** pattern:
 The `sops.secrets.sing-box-outbounds.restartUnits = [ "sing-box.service" ]`
 setting means if the encrypted secret changes and `nixos-rebuild switch` runs,
 sing-box is automatically restarted.
+
+---
+
+## Tor Runtime Design
+
+`tor-out` is a candidate in the `proxy` urltest group. It starts the
+Nix-provided Tor binary from its stable runtime path; its persistent state
+directory is `/var/lib/sing-box/tor`.
+
+The service exposes the pluggable transports under stable runtime paths:
+
+```text
+/run/sing-box/pt/tor
+/run/sing-box/pt/lyrebird
+/run/sing-box/pt/snowflake-client
+```
+
+They are symlinks to the exact Nix-built packages selected by the system, so
+the encrypted config does not need to contain a Nix store hash.
+`tor-out.executable_path` deliberately names `/run/sing-box/pt/tor`.
+
+sing-box represents `torrc` as a map, which cannot represent repeated Tor
+directives. The repeated `ClientTransportPlugin` and `Bridge` directives must
+therefore be sent as `extra_args` pairs at Tor startup. The operational bridge
+procedure and secret-handling rules are in the
+[first-time setup guide](secrets-sing-box-setup.md#emergency-tor-fallback).
 
 ---
 
@@ -201,6 +228,10 @@ packages.mySingBox = pkgs.sing-box.overrideAttrs (old: {
   tags = lib.unique ((old.tags or [ ]) ++ [
     "with_naive_outbound"
     "with_purego"
+    "with_gvisor"
+    "with_quic"
+    "with_utls"
+    "with_wireguard"
   ]);
   postInstall = (old.postInstall or "") + lib.optionalString (cronetLibDir != null) ''
     install -Dm755 \
@@ -210,67 +241,28 @@ packages.mySingBox = pkgs.sing-box.overrideAttrs (old: {
 });
 ```
 
-- Adds `with_naive_outbound` and `with_purego` build tags
+- Adds NaiveProxy/purego plus gVisor, QUIC, uTLS, and WireGuard build tags.
 - Bundles `libcronet.so` for the host platform (x86_64-linux or aarch64-linux)
-- No naive outbound is wired into the config — the build just makes it available
+- The current config does not wire NaiveProxy or WireGuard outbounds, but the
+  core supports them for later use.
 
 ### NixOS Module (`nixosModules.singBox`)
 
 #### Public Config (`services.sing-box.settings`)
 
-```nix
-services.sing-box = {
-  enable = true;
-  package = self.packages.${pkgs.stdenv.hostPlatform.system}.mySingBox;
+The Nix-native `settings` attribute produces the public `config.json`; it
+contains no outbound credentials. Its concrete behavior is:
 
-  settings = {
-    log = { level = "info"; timestamp = true; };
-
-    dns = {
-      servers = [
-        { tag = "remote-dns"; type = "tls"; server = "8.8.8.8"; detour = "proxy"; }
-        { tag = "local-dns";  type = "https"; server = "1.1.1.1"; }
-      ];
-      rules = [
-        { domain_suffix = [ ".ru" ".su" ".рф" ]; server = "local-dns"; }
-        { rule_set = [ "geoip-ru" "geosite-ru" ]; server = "local-dns"; }
-      ];
-      final = "remote-dns";
-    };
-
-    inbounds = [
-      { type = "socks"; tag = "socks-in"; listen = "127.0.0.1"; listen_port = 1080; }
-      { type = "http";  tag = "http-in";  listen = "127.0.0.1"; listen_port = 8080; }
-    ];
-
-    route = {
-      default_domain_resolver = { server = "local-dns"; strategy = "ipv4_only"; };
-      rule_set = [
-        { tag = "geoip-ru";   type = "remote"; format = "binary";
-          url = "https://github.com/SagerNet/sing-geoip/raw/rule-set/geoip-ru.srs";
-          download_detour = "direct"; }
-        { tag = "geosite-ru"; type = "remote"; format = "binary";
-          url = "https://github.com/SagerNet/sing-geosite/raw/rule-set/geosite-category-ru.srs";
-          download_detour = "direct"; }
-      ];
-      rules = [
-        { domain_suffix = [ ".ru" ".su" ".рф" ]; outbound = "direct"; }
-        { rule_set = [ "geoip-ru" "geosite-ru" ]; outbound = "direct"; }
-      ];
-      auto_detect_interface = true;
-      final = "proxy";
-    };
-
-    experimental.cache_file.enabled = true;
-  };
-};
-```
-
-**Routing logic:**
-- `.ru`, `.su`, `.рф` domains + geoip/geosite-ru rule sets → `direct` (bypass)
-- Everything else → `proxy` (through the urltest group in outbounds.json)
-- DNS: Russian domains use `local-dns` (1.1.1.1), everything else uses
-  `remote-dns` (8.8.8.8 via proxy)
+- A `mixed` listener on `127.0.0.1:1080` accepts both SOCKS5 and HTTP proxy
+  traffic.
+- `geohide-dns` is DNS-over-HTTPS to `dns.geohide.ru:444/dns-query`, resolved
+  initially through `local-dns` and sent through `proxy` thereafter.
+- `local-dns` is Cloudflare DNS-over-HTTPS (`1.1.1.1`). Russian suffixes and
+  the Russian GeoIP/Geosite rule sets use it; other queries use `geohide-dns`.
+- `.ru`, `.su`, `.рф`, `geoip-ru`, and `geosite-ru` route directly. All other
+  traffic uses the secret `proxy` URLTest outbound.
+- The GeoIP/Geosite rule sets download directly, interface autodetection is
+  enabled, and sing-box's cache file is enabled.
 
 #### Secret Integration (`systemd.services.sing-box`)
 
@@ -283,6 +275,11 @@ systemd.services.sing-box = {
         ${config.sops.secrets.sing-box-outbounds.path} \
         /run/sing-box/outbounds.json
       chown sing-box:sing-box /run/sing-box/outbounds.json
+      install -d -m 755 /run/sing-box/pt
+      ln -sfn ${pkgs.tor}/bin/tor /run/sing-box/pt/tor
+      ln -sfn ${lib.getExe pkgs.obfs4} /run/sing-box/pt/lyrebird
+      ln -sfn ${pkgs.snowflake}/bin/client /run/sing-box/pt/snowflake-client
+      install -d -m 700 -o sing-box -g sing-box /var/lib/sing-box/tor
     ''}"
   ];
 };
@@ -294,6 +291,9 @@ systemd.services.sing-box = {
 - The `+` prefix runs the script as root (needed for `/run/sing-box/` access)
 - `install -Dm 600` creates the directory if missing, sets restrictive perms
 - `chown sing-box:sing-box` — sing-box service runs as the `sing-box` user
+- The two symlinks decouple secret JSON from changing Nix store hashes.
+- `/var/lib/sing-box/tor` persists Tor state so the Tor process does not
+  create a new cold state directory on every service restart.
 
 ---
 
@@ -322,56 +322,12 @@ creation_rules:
 
 ### `secrets/sing-box-outbounds.json.example` (Template)
 
-The plaintext template with placeholder values:
-
-```json
-{
-  "outbounds": [
-    {
-      "type": "urltest",
-      "tag": "proxy",
-      "outbounds": ["vless-grpc", "hysteria-out"],
-      "url": "https://www.gstatic.com/generate_204",
-      "interval": "3m",
-      "tolerance": 50
-    },
-    {
-      "type": "vless",
-      "tag": "vless-grpc",
-      "server": "example.com",
-      "server_port": 443,
-      "uuid": "REPLACE-WITH-UUID",
-      "flow": "xtls-rprx-vision",
-      "domain_resolver": { "server": "local-dns", "strategy": "ipv4_only" },
-      "tls": {
-        "enabled": true,
-        "server_name": "example.com",
-        "utls": { "enabled": true }
-      },
-      "transport": { "type": "grpc", "service_name": "grpc-service" }
-    },
-    {
-      "type": "hysteria2",
-      "tag": "hysteria-out",
-      "server": "example.com",
-      "server_ports": ["20000:50000"],
-      "domain_resolver": { "server": "local-dns", "strategy": "ipv4_only" },
-      "hop_interval": "30s",
-      "password": "REPLACE",
-      "up_mbps": 100,
-      "down_mbps": 100,
-      "obfs": { "type": "salamander", "password": "REPLACE" },
-      "tls": { "enabled": true, "server_name": "example.com", "insecure": false }
-    },
-    { "type": "direct", "tag": "direct" },
-    { "type": "block", "tag": "block" }
-  ]
-}
-```
-
-Fields to fill with real values:
-- `vless-grpc`: `server`, `server_port`, `uuid`, `server_name`, `service_name`
-- `hysteria-out`: `server`, `server_ports`, `password`, `obfs.password`, `server_name`
+The plaintext template has explicit placeholders for every VLESS, Hysteria2,
+and local SOCKS value, and preserves the active uTLS, Reality, and TLS
+fragmentation settings. It also contains the bridge-ready `tor-out` and its
+stable transport-plugin paths. Because it is valid JSON for SOPS, comments
+are documented in [Tor Runtime Design](#tor-runtime-design) instead
+of embedded in the file.
 
 ### `secrets/sing-box-outbounds.json` (Encrypted)
 
@@ -398,88 +354,9 @@ Both modules must be imported. The host must have:
 - `services.openssh` enabled (for `/etc/ssh/ssh_host_ed25519_key`)
 - User in `wheel` group (for sudo access to read the SSH host key)
 
----
 
-## First-Time Setup Procedure
-
-### Prerequisites
-
-- NixOS booted with `services.openssh` enabled
-- `/etc/ssh/ssh_host_ed25519_key` (and `.pub`) exist
-- User is in `wheel` group
-- `$EDITOR` is set
-
-### Steps
-
-Run all commands from the repo root.
-
-#### 1. Sanity check
-
-```bash
-nix flake check
-nixos-rebuild dry-build --flake .#<host>
-```
-
-Both must pass before proceeding.
-
-#### 2. Derive age recipient and patch .sops.yaml
-
-```bash
-git add -A
-nix run .#sops-init-recipient
-```
-
-Verifies: `grep age1 .sops.yaml` — should show real recipient, not placeholder.
-
-#### 3. Re-encrypt the secret against the real recipient
-
-```bash
-nix run .#sops-edit -- --reset secrets/sing-box-outbounds.json
-```
-
-This copies the `.example` template, encrypts it with the host's real age key.
-The file now contains placeholder values — sing-box starts but can't connect.
-
-#### 4. Edit with real outbound values
-
-```bash
-nix run .#sops-edit -- secrets/sing-box-outbounds.json
-```
-
-Opens `$EDITOR` with decrypted JSON. Fill in real server details. Save and quit.
-sops re-encrypts on save.
-
-#### 5. Stage for the builder
-
-```bash
-git add -A
-git status --short
-```
-
-Flakes only see git-tracked/staged files. The re-encrypted secret and
-`.sops.yaml` must be staged.
-
-#### 6. Build-check and switch
-
-```bash
-nix flake check
-nixos-rebuild dry-build --flake .#<host>
-sudo nixos-rebuild switch --flake .#<host>
-```
-
----
-
-## Day-to-Day Secret Rotation
-
-To change outbounds without touching Nix:
-
-```bash
-nix run .#sops-edit -- secrets/sing-box-outbounds.json
-git add -A
-sudo nixos-rebuild switch --flake .#<host>
-```
-
-The `restartUnits` setting automatically restarts `sing-box.service`.
+The operational procedure for first deployment, validation, bridge setup, and
+later secret rotation is in [the setup guide](secrets-sing-box-setup.md).
 
 ---
 

@@ -26,6 +26,14 @@ So the rule is: **prepare the secret before the first switch**, not after.
   private key).
 - You are in a terminal where `sudo` can prompt for a password.
 - `$EDITOR` is set to something usable (e.g. `vim`, `nano`).
+- The target host imports both `self.nixosModules.sops` and
+  `self.nixosModules.singBox`. The public Nix module provides the mixed
+  SOCKS/HTTP proxy on `127.0.0.1:1080`; do not put credentials or bridge
+  values in that module.
+- Your VLESS/Hysteria2 subscription details are available. If you want the
+  emergency Tor fallback from the first deployment, also have at least one
+  valid bridge line ready. It is safe to deploy without a bridge, but that
+  Tor candidate will remain unavailable.
 
 ## Steps
 
@@ -42,6 +50,15 @@ nixos-rebuild dry-build --flake .#acrux
 Both must pass before going further. This confirms the modules evaluate and
 the custom `mySingBox` build and `sops-init-recipient` / `sops-edit` helpers
 are wired up.
+
+Also confirm the host imports the two modules before continuing:
+
+```bash
+rg 'self\.nixosModules\.(sops|singBox)' modules/hosts/<host>/configuration.nix
+```
+
+Both names must appear. If they do not, add the imports as part of the host
+configuration before preparing the secret.
 
 ### 2. Derive the host's age recipient and patch `.sops.yaml`
 
@@ -81,9 +98,9 @@ This:
 - prints instructions for the next step.
 
 After this step the file is encrypted to the host's real recipient but still
-contains the example placeholder values (`example.com`, `REPLACE-WITH-UUID`,
-etc.). sing-box would start but fail to connect — that's expected until you
-fill in real values.
+contains the example placeholder values (`REPLACE-WITH-VLESS-HOST`,
+`REPLACE-WITH-VLESS-UUID`, etc.). sing-box would start but fail to connect —
+that's expected until you fill in real values.
 
 ### 4. Edit the secret with real outbound values
 
@@ -93,16 +110,62 @@ nix run .#sops-edit -- secrets/sing-box-outbounds.json
 
 This derives the age private key from the host SSH key again (sudo prompt)
 and opens the decrypted file in `$EDITOR`. Replace the placeholders with your
-real outbounds:
+real outbounds. Keep the field layout from the template unless your provider
+specifies otherwise:
 
-- `vless-grpc`: `server`, `server_port`, `uuid`, `server_name`, `service_name`
-- `hysteria-out`: `server`, `server_ports`, `password`, `obfs.password`,
-  `server_name`
+- `vless-grpc`: `server`, `server_port`, `uuid`, TLS `server_name`, Reality
+  `public_key` / `short_id`, and the gRPC `service_name`. Keep `utls`,
+  `record_fragment`, and `fragment` enabled when they are part of your working
+  connection.
+- `hysteria-out`: `server`, `server_ports`, `password`, `obfs.password`, TLS
+  `server_name`, and any provider-specific port range. Keep its TLS
+  fragmentation fields when they are part of your working connection.
+- `socks-out`: the local SOCKS server address and port, if you use it.
 
-The `urltest` group (`tag: "proxy"`) and `direct`/`block` outbounds normally
-do not need editing. Save and quit (`:wq` in vim). sops re-encrypts on save.
-If you quit without changing anything, sops discards the file ("file has not
-changed, not writing") — make a real edit or the file keeps its old values.
+The `urltest` group (`tag: "proxy"`) already includes all configured
+candidates—VLESS, Hysteria2, local SOCKS, and Tor—and normally needs no
+editing. `direct` and `block` also need no edits. Save and quit (`:wq` in
+vim). sops re-encrypts on save. If you quit without changing anything, sops
+discards the file ("file has not changed, not writing") — make a real edit or
+the file keeps its old values.
+
+#### Emergency Tor fallback
+
+The template contains a bridge-ready `tor-out`. It starts the Nix-provided
+Tor binary through the stable `executable_path` below; no globally installed
+Tor package is required. Keep that `executable_path` in the encrypted
+outbound.
+
+At service start, Nix exposes the selected transport binaries at stable paths:
+
+```text
+/run/sing-box/pt/tor
+/run/sing-box/pt/lyrebird
+/run/sing-box/pt/snowflake-client
+```
+
+Leave the two existing `--ClientTransportPlugin` argument pairs intact. They
+enable obfs4/Lyrebird and Snowflake without putting an unstable Nix store path
+in the encrypted file.
+
+When you obtain a bridge, append a `--Bridge` pair to `tor-out.extra_args` in
+the encrypted outbound. For an obfs4 bridge, the shape is:
+
+```json
+"--Bridge",
+"obfs4 REPLACE-WITH-IP:PORT REPLACE-WITH-FINGERPRINT cert=REPLACE-WITH-CERT iat-mode=0"
+```
+
+Add one such pair per bridge. Keep bridge addresses, fingerprints, and
+certificates only in `secrets/sing-box-outbounds.json`; do not put them in the
+public Nix module or the `.example` file. `torrc` is deliberately limited to
+single-value options because sing-box represents it as a JSON map. Repeated
+directives such as `ClientTransportPlugin` and `Bridge` therefore belong in
+`extra_args`.
+
+Until at least one valid bridge is added, the Tor candidate is intentionally
+unusable; urltest can still select the VLESS, Hysteria2, or local SOCKS
+candidates.
 
 ### 5. Stage the encrypted files for the builder
 
@@ -135,7 +198,30 @@ sudo nixos-rebuild switch --flake .#acrux
 
 On activation sops-nix decrypts `secrets/sing-box-outbounds.json` to
 `/run/secrets/sing-box-outbounds`, the sing-box `ExecStartPre` installs it to
-`/run/sing-box/outbounds.json`, and sing-box starts with the merged config.
+`/run/sing-box/outbounds.json`, creates the stable Tor transport paths, and
+sing-box starts with the merged config.
+
+After the first switch, inspect the service before relying on it:
+
+```bash
+systemctl status sing-box.service
+journalctl -u sing-box.service -b --no-pager
+```
+
+With a valid Tor bridge, the journal should show Tor bootstrapping rather than
+an immediate transport or bridge error. A Tor connection test is not possible
+before bridge values are supplied.
+
+Finally, test both protocols accepted by the mixed listener:
+
+```bash
+curl --proxy socks5h://127.0.0.1:1080 -fsS https://www.gstatic.com/generate_204
+curl --proxy http://127.0.0.1:1080 -fsS https://www.gstatic.com/generate_204
+```
+
+Both commands should exit successfully with an empty response body. `urltest`
+normally selects the lowest-latency healthy outbound; Tor is an emergency
+candidate and is selected when the faster candidates are unavailable.
 
 ## Day-to-day changes later
 
@@ -187,3 +273,22 @@ Harmless. It just means you have unstaged changes. Stage them with
 The encrypted file's recipient does not match any key the host can produce.
 Re-run step 2 (`sops-init-recipient`) to confirm `.sops.yaml` has the host's
 real `age1...`, then re-run step 3 (`--reset`) to re-encrypt.
+
+### sing-box fails to start or the proxy on port 1080 does not respond
+
+Check the startup chain in this order:
+
+1. `systemctl status sops-nix.service` — the secret must decrypt first.
+2. `ls -la /run/secrets/sing-box-outbounds` — confirms the decrypted JSON
+   exists.
+3. `ls -la /run/sing-box/outbounds.json` — confirms the service copied it
+   into sing-box's merged configuration directory.
+4. `ls -la /run/sing-box/pt` — confirms the Tor, Lyrebird, and Snowflake
+   static paths were exposed.
+5. `journalctl -u sing-box.service -b --no-pager` — reports JSON validation,
+   outbound, DNS, or Tor bootstrap errors.
+
+If the main VLESS/Hysteria2 connections work but Tor logs a bridge or
+transport error, re-open the encrypted secret and verify the bridge is a
+complete `--Bridge`/bridge-line pair and that the transport name matches it
+(`obfs4` or `snowflake`).
