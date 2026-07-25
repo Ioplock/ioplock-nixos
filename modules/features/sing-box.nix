@@ -9,13 +9,17 @@
       }.${pkgs.stdenv.hostPlatform.system} or null;
     in
     {
-      # Custom sing-box build with naive outbound support and purego (cronet).
-      # No naive outbound is wired into the config here — this just keeps the
-      # build tags and bundled libcronet.so available for later use.
+      # Custom sing-box build with the protocol support used by this host.
+      # No naive or WireGuard outbound is wired into the config yet; their
+      # build tags keep them available for later use.
       packages.mySingBox = pkgs.sing-box.overrideAttrs (old: {
         tags = lib.unique ((old.tags or [ ]) ++ [
           "with_naive_outbound"
           "with_purego"
+          "with_gvisor"
+          "with_quic"
+          "with_utls"
+          "with_wireguard"
         ]);
 
         postInstall = (old.postInstall or "") + lib.optionalString (cronetLibDir != null) ''
@@ -42,9 +46,16 @@
           dns = {
             servers = [
               {
-                tag = "remote-dns";
-                type = "tls";
-                server = "8.8.8.8";
+                tag = "geohide-dns";
+                type = "https";
+                server = "dns.geohide.ru";
+                server_port = 444;
+                path = "/dns-query";
+                domain_resolver = {
+                  server = "local-dns";
+                  strategy = "ipv4_only";
+                };
+                tls.server_name = "dns.geohide.ru";
                 detour = "proxy";
               }
               {
@@ -70,21 +81,15 @@
                 server = "local-dns";
               }
             ];
-            final = "remote-dns";
+            final = "geohide-dns";
           };
 
           inbounds = [
             {
-              type = "socks";
-              tag = "socks-in";
+              type = "mixed";
+              tag = "mixed-in";
               listen = "127.0.0.1";
               listen_port = 1080;
-            }
-            {
-              type = "http";
-              tag = "http-in";
-              listen = "127.0.0.1";
-              listen_port = 8080;
             }
           ];
 
