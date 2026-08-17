@@ -5,24 +5,7 @@
 }:
 {
   flake.nixosModules.yazi =
-    {
-      pkgs,
-      lib,
-      ...
-    }:
-    let
-      termfileChooser = pkgs.xdg-desktop-portal-termfilechooser;
-      termfileChooserConfig = (pkgs.formats.ini { }).generate "termfilechooser-config" {
-        filechooser = {
-          cmd = "${termfileChooser}/share/xdg-desktop-portal-termfilechooser/yazi-wrapper.sh";
-          create_help_file = "1";
-          default_dir = "$HOME";
-          env = "TERMCMD=${lib.getExe pkgs.ghostty} --title termfilechooser";
-          open_mode = "suggested";
-          save_mode = "suggested";
-        };
-      };
-    in
+    { pkgs, ... }:
     {
       programs.yazi = {
         enable = true;
@@ -34,8 +17,6 @@
         unrar
         rar
       ];
-
-      environment.etc."xdg/xdg-desktop-portal-termfilechooser/config".source = termfileChooserConfig;
 
       xdg.mime.defaultApplications = {
         "inode/directory" = "yazi.desktop";
