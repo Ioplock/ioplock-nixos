@@ -54,8 +54,10 @@
         # Force toolkit backend to Wayland
         GTK_USE_PORTAL = "1";
         QT_QPA_PLATFORM = "wayland;xcb"; # Qt apps
-        # Terminal emulator used by the termfilechooser portal to open yazi
-        TERMCMD = "${lib.getExe pkgs.ghostty} --title termfilechooser";
+        # Terminal emulator used by the termfilechooser portal to open yazi.
+        # ghostty needs `-e` to treat the trailing command (yazi + args) as a
+        # program to run; `--title <v>` (space form) would be parsed as ghostty fields.
+        TERMCMD = "${lib.getExe pkgs.ghostty} -e";
         SDL_VIDEODRIVER = "wayland"; # Games and SDL apps
         CLUTTER_BACKEND = "wayland"; # Clutter apps
 
