@@ -14,6 +14,7 @@
         self.nixosModules.firefox
         self.nixosModules.git
         self.nixosModules.nh
+        self.nixosModules.opencode
         self.nixosModules.quickshell
         self.nixosModules.rofi
         self.nixosModules.singBox
