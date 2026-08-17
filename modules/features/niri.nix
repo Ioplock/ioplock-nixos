@@ -21,8 +21,26 @@
 
       xdg.portal = {
         enable = true;
-        extraPortals = [ pkgs.xdg-desktop-portal-gnome ];
+        extraPortals = [
+          pkgs.xdg-desktop-portal-gtk
+          pkgs.xdg-desktop-portal-gnome
+          pkgs.xdg-desktop-portal-termfilechooser
+        ];
+        config = {
+          common = {
+            default = [ "gtk" ];
+            "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+            "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
+            "org.freedesktop.impl.portal.Screenshot" = [ "gnome" ];
+            "org.freedesktop.impl.portal.ScreenCast" = [ "gnome" ];
+          };
+          niri = {
+            "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+          };
+        };
       };
+
+      services.gnome.gnome-keyring.enable = true;
 
       services.udev.packages = [ pkgs.brightnessctl ];
 
@@ -34,7 +52,7 @@
         MOZ_ENABLE_WAYLAND = "1";
 
         # Force toolkit backend to Wayland
-        GDK_BACKEND = "wayland,x11"; # GTK apps
+        GTK_USE_PORTAL = "1";
         QT_QPA_PLATFORM = "wayland;xcb"; # Qt apps
         SDL_VIDEODRIVER = "wayland"; # Games and SDL apps
         CLUTTER_BACKEND = "wayland"; # Clutter apps
