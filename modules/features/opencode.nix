@@ -10,6 +10,11 @@
           name = "DeepSeek V4 Flash (max)";
           reasoningEffort = "max";
         };
+
+        mcp.context7 = {
+          type = "remote";
+          url = "https://mcp.context7.com/mcp";
+        };
       };
     };
 

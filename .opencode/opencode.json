@@ -1,0 +1,35 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "references": {
+    "quickshell": {
+      "repository": "quickshell-mirror/quickshell",
+      "branch": "master",
+      "description": "Quickshell source. Use when working with Quickshell APIs or implementation details."
+    },
+
+    "quickshell-docs": {
+      "repository": "quickshell-mirror/quickshell-web",
+      "branch": "main",
+      "description": "Quickshell documentation. Prefer for Quickshell API usage and guides."
+    },
+
+    "quickshell-examples": {
+      "repository": "quickshell-mirror/quickshell-examples",
+      "description": "Official Quickshell examples. Use for idiomatic QML patterns."
+    },
+
+    "wrapper-modules": {
+      "repository": "BirdeeHub/nix-wrapper-modules",
+      "description": "nix-wrapper-modules source. Use when working with wrapper-modules APIs, wrapper modules, or lib.wrapPackage."
+    }
+  },
+
+  "mcp": {
+    "qt-docs": {
+      "type": "remote",
+      "url": "https://qt-docs-mcp.qt.io/mcp",
+      "enabled": true
+    }
+  }
+}
