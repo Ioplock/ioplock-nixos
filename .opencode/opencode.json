@@ -42,14 +42,16 @@
       "enabled": true
     },
     "nixos": {
-      "type": "local",
-      "command": [
-        "nix",
-        "run",
-        "github:utensils/mcp-nixos",
-        "--"
-      ],
-      "enabled": true
-    }
+	  "type": "local",
+	  "command": [
+	    "env",
+	    "MCP_NIXOS_TRANSPORT=stdio",
+	    "nix",
+	    "run",
+	    "github:utensils/mcp-nixos",
+	    "--"
+	  ],
+	  "enabled": true
+	}
   }
 }
