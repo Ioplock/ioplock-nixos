@@ -3,7 +3,7 @@
   flake.nixosModules.vscode =
     { pkgs, lib, ... }:
     {
-      nixpkgs.config.allowUnfreePredicate = package: lib.getName package == "vscode";
+      nixpkgs.config.allowUnfreePredicate = package: builtins.elem (lib.getName package) [ "vscode" "replace" ];
 
       environment.systemPackages = [
         self.packages.${pkgs.stdenv.hostPlatform.system}.myVSCode
@@ -20,7 +20,7 @@
     let
       vscodePkgs = import inputs.nixpkgs {
         inherit system;
-        config.allowUnfreePredicate = package: lib.getName package == "vscode";
+        config.allowUnfreePredicate = package: builtins.elem (lib.getName package) [ "vscode" "replace" ];
       };
     in
     {
