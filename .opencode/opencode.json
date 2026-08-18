@@ -2,26 +2,36 @@
   "$schema": "https://opencode.ai/config.json",
 
   "references": {
+    "wrapper-modules": {
+      "repository": "BirdeeHub/nix-wrapper-modules",
+      "description": "nix-wrapper-modules source. Use when working with wrapper-modules APIs, wrapper modules, or lib.wrapPackage."
+    },
+    "dendritic": {
+      "repository": "mightyiam/dendritic",
+      "branch": "master",
+      "description": "Canonical Dendritic Pattern documentation. Use when reasoning about the architecture, module boundaries, top-level modules, deferred modules, imports, specialArgs, and feature organization."
+    },
+    "flake-parts": {
+      "repository": "hercules-ci/flake-parts",
+      "description": "flake-parts implementation and documentation. Use when working with flake-parts modules, perSystem, flake outputs, module arguments, and flake-parts options."
+    },
+    "import-tree": {
+      "repository": "denful/import-tree",
+      "description": "import-tree source and documentation. Use when reasoning about automatic module discovery and filtering in this dendritic configuration."
+    },
     "quickshell": {
       "repository": "quickshell-mirror/quickshell",
       "branch": "master",
       "description": "Quickshell source. Use when working with Quickshell APIs or implementation details."
     },
-
     "quickshell-docs": {
       "repository": "quickshell-mirror/quickshell-web",
       "branch": "main",
       "description": "Quickshell documentation. Prefer for Quickshell API usage and guides."
     },
-
     "quickshell-examples": {
       "repository": "quickshell-mirror/quickshell-examples",
       "description": "Official Quickshell examples. Use for idiomatic QML patterns."
-    },
-
-    "wrapper-modules": {
-      "repository": "BirdeeHub/nix-wrapper-modules",
-      "description": "nix-wrapper-modules source. Use when working with wrapper-modules APIs, wrapper modules, or lib.wrapPackage."
     }
   },
 
@@ -29,6 +39,16 @@
     "qt-docs": {
       "type": "remote",
       "url": "https://qt-docs-mcp.qt.io/mcp",
+      "enabled": true
+    },
+    "nixos": {
+      "type": "local",
+      "command": [
+        "nix",
+        "run",
+        "github:utensils/mcp-nixos",
+        "--"
+      ],
       "enabled": true
     }
   }
