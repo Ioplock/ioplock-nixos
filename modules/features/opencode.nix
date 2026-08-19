@@ -23,6 +23,7 @@
     {
       environment.systemPackages = [
         self.packages.${pkgs.stdenv.hostPlatform.system}.myOpencode
+        pkgs.mcp-nixos
       ];
     };
 
