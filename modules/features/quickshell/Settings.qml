@@ -8,12 +8,13 @@ QtObject {
     readonly property string settingsPath: "/home/ioplock/.config/quickshell/settings.json"
 
 property int barHeight: 34
-            property real barOpacity: 0.7
+            property real barOpacity: 0.96
     property string barColor: "#1e1e2e"
     property string textColor: "#cdd6f4"
     property string accentColor: "#f77af5ff"
     property int fontSize: 13
     property string fontFamily: "sans-serif"
+    property string iconFontFamily: "JetBrainsMono Nerd Font"
     property string clockFormat: "ddd, dd MMM  HH:mm"
     property string wallpaper: ""
 
@@ -31,13 +32,14 @@ property int barHeight: 34
 
         JsonAdapter {
             id: adapter
-property int barHeight: 34
-    property real barOpacity: 0.7
+            property int barHeight: 34
+    property real barOpacity: 0.96
             property string barColor: "#1e1e2e"
             property string textColor: "#cdd6f4"
             property string accentColor: "#f77af5ff"
             property int fontSize: 13
             property string fontFamily: "sans-serif"
+            property string iconFontFamily: "JetBrainsMono Nerd Font"
             property string clockFormat: "ddd, dd MMM  HH:mm"
             property string wallpaper: ""
         }
@@ -52,6 +54,7 @@ property int barHeight: 34
             settings.accentColor = adapter.accentColor
             settings.fontSize = adapter.fontSize
             settings.fontFamily = adapter.fontFamily
+            settings.iconFontFamily = adapter.iconFontFamily
             settings.clockFormat = adapter.clockFormat
             settings.wallpaper = adapter.wallpaper
             settings._saving = false
@@ -68,6 +71,7 @@ property int barHeight: 34
         adapter.accentColor = accentColor
         adapter.fontSize = fontSize
         adapter.fontFamily = fontFamily
+        adapter.iconFontFamily = iconFontFamily
         adapter.clockFormat = clockFormat
         adapter.wallpaper = wallpaper
         fileView.writeAdapter()
@@ -81,6 +85,7 @@ property int barHeight: 34
         accentColor = "#f77af5ff"
         fontSize = 13
         fontFamily = "sans-serif"
+        iconFontFamily = "JetBrainsMono Nerd Font"
         clockFormat = "ddd, dd MMM  HH:mm"
         wallpaper = ""
         save()
@@ -93,6 +98,7 @@ property int barHeight: 34
     onAccentColorChanged: save()
     onFontSizeChanged: save()
     onFontFamilyChanged: save()
+    onIconFontFamilyChanged: save()
     onClockFormatChanged: save()
     onWallpaperChanged: save()
 }

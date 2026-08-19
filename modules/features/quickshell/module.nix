@@ -67,6 +67,15 @@
         text = builtins.readFile ./set-wallpaper.sh;
       };
 
+      packages.myToggleBluetooth = pkgs.writeShellApplication {
+        name = "toggle-bluetooth";
+        runtimeInputs = with pkgs; [
+          bluez
+          util-linux
+        ];
+        text = builtins.readFile ./toggle-bluetooth.sh;
+      };
+
       packages.myQuickshell = inputs.wrapper-modules.lib.wrapPackage {
         inherit pkgs;
         imports = [ self.wrapperModules.quickshell ];
@@ -75,6 +84,9 @@
           self'.packages.myQuickshellStatus
           self'.packages.myWallpaperList
           self'.packages.mySetWallpaper
+          self'.packages.myToggleBluetooth
+          pkgs.niri
+          pkgs.wireplumber
         ];
       };
     };
