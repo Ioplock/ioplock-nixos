@@ -62,20 +62,25 @@ PanelWindow {
 
     property var wallpapers: []
 
-    // Index of the currently applied wallpaper, used to preselect it.
-    readonly property int initialIndex: {
-        if (!appSettings || !appSettings.wallpaper) return 0
-        for (let i = 0; i < picker.wallpapers.length; i++) {
-            if (picker.wallpapers[i].path === appSettings.wallpaper)
-                return i
-        }
-        return 0
-    }
-
     onVisibleChanged: {
         if (picker.visible) {
             picker.refresh()
             grid.forceActiveFocus()
+        }
+    }
+
+    // Highlights the wallpaper that is currently applied, so reopening the
+    // picker preselected the last choice. Runs once the listing has finished,
+    // since `appSettings.wallpaper` may not be loaded yet when the picker is
+    // first created.
+    function selectApplied() {
+        if (grid.count === 0) return
+        for (let i = 0; i < picker.wallpapers.length; i++) {
+            if (picker.wallpapers[i].path === appSettings.wallpaper) {
+                grid.currentIndex = i
+                grid.positionViewAtIndex(i, GridView.Center)
+                return
+            }
         }
     }
 
@@ -93,6 +98,8 @@ PanelWindow {
     Process {
         id: listProcess
         command: [ "list-wallpapers" ]
+
+        onExited: picker.selectApplied()
 
         stdout: SplitParser {
             onRead: data => {
@@ -198,7 +205,7 @@ PanelWindow {
 
                 onCountChanged: {
                     if (grid.count > 0 && picker.visible)
-                        grid.currentIndex = Math.min(picker.initialIndex, grid.count - 1)
+                        picker.selectApplied()
                 }
 
                 function commit() {

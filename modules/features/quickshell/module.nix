@@ -58,15 +58,6 @@
         text = builtins.readFile ./list-wallpapers.sh;
       };
 
-      packages.mySetWallpaper = pkgs.writeShellApplication {
-        name = "set-wallpaper";
-        runtimeInputs = with pkgs; [
-          procps
-          swaybg
-        ];
-        text = builtins.readFile ./set-wallpaper.sh;
-      };
-
       packages.myToggleBluetooth = pkgs.writeShellApplication {
         name = "toggle-bluetooth";
         runtimeInputs = with pkgs; [
@@ -83,7 +74,6 @@
         extraPackages = [
           self'.packages.myQuickshellStatus
           self'.packages.myWallpaperList
-          self'.packages.mySetWallpaper
           self'.packages.myToggleBluetooth
           pkgs.niri
           pkgs.wireplumber
