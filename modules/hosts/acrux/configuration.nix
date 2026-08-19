@@ -30,10 +30,13 @@
       # System
       # ==================================================
       nixpkgs.config.allowUnfree = true;
-      nix.settings.experimental-features = [
-        "nix-command"
-        "flakes"
-      ];
+      nix.settings = {
+        experimental-features = [
+          "nix-command"
+          "flakes"
+        ];
+        auto-optimise-store = true;
+      };
       system.stateVersion = "25.05";
 
       environment.systemPackages = with pkgs; [
