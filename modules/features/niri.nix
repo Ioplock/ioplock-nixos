@@ -246,6 +246,10 @@
             props.hotkey-overlay-title = "Clipboard History";
             content.spawn-sh = lib.getExe self'.packages.myCliphistRofi;
           };
+          "Mod+Shift+W" = _: {
+            props.hotkey-overlay-title = "Switch Wallpaper";
+            content.spawn-sh = "${lib.getExe self'.packages.myQuickshell} ipc call wallpaperPicker toggle";
+          };
         };
       };
     in
@@ -257,6 +261,7 @@
 
         flags = {
           "--command" = lib.getExe self'.packages.myShellEnv;
+          "--background-opacity" = "0.7";
           # Auto zsh integration sets ZDOTDIR, which the wrapped zsh overrides
           # via makeWrapper (its .zshrc lives in its own ZDOTDIR). That conflict
           # breaks ghostty's prompt detection, making it always ask to confirm

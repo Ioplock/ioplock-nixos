@@ -49,11 +49,33 @@
         text = builtins.readFile ./status.sh;
       };
 
+      packages.myWallpaperList = pkgs.writeShellApplication {
+        name = "list-wallpapers";
+        runtimeInputs = with pkgs; [
+          findutils
+          gnused
+        ];
+        text = builtins.readFile ./list-wallpapers.sh;
+      };
+
+      packages.mySetWallpaper = pkgs.writeShellApplication {
+        name = "set-wallpaper";
+        runtimeInputs = with pkgs; [
+          procps
+          swaybg
+        ];
+        text = builtins.readFile ./set-wallpaper.sh;
+      };
+
       packages.myQuickshell = inputs.wrapper-modules.lib.wrapPackage {
         inherit pkgs;
         imports = [ self.wrapperModules.quickshell ];
         configPath = ./.;
-        extraPackages = [ self'.packages.myQuickshellStatus ];
+        extraPackages = [
+          self'.packages.myQuickshellStatus
+          self'.packages.myWallpaperList
+          self'.packages.mySetWallpaper
+        ];
       };
     };
 }

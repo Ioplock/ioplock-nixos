@@ -18,6 +18,41 @@ ShellRoot {
         appSettings: appSettings
     }
 
+    // Wallpaper is managed by swaybg: niri draws swaybg's image as the
+    // compositor background, which shows through our translucent bar. Applying
+    // a wallpaper (re)spawns swaybg with the new image.
+    function applyWallpaper() {
+        if (!appSettings.wallpaper) return
+        wallpaperProcess.running = false
+        wallpaperProcess.command = ["set-wallpaper", appSettings.wallpaper]
+        wallpaperProcess.running = true
+    }
+
+    Connections {
+        target: appSettings
+        function onWallpaperChanged() {
+            root.applyWallpaper()
+        }
+    }
+
+    Process {
+        id: wallpaperProcess
+        command: []
+    }
+
+    WallpaperPicker {
+        id: wallpaperPicker
+        appSettings: appSettings
+    }
+
+    IpcHandler {
+        target: "wallpaperPicker"
+
+        function toggle(): void {
+            wallpaperPicker.visible = !wallpaperPicker.visible
+        }
+    }
+
     Variants {
         id: barVariants
         model: Quickshell.screens
@@ -28,8 +63,16 @@ ShellRoot {
 
             property var appSettingsRef: appSettings
 
+            // Bar background is semi-transparent so the wallpaper (rendered by
+            // swaybg behind everything) shows through. Tunable via the
+            // `barOpacity` setting.
+            readonly property color barColorValue: appSettingsRef.barColor
+            readonly property color barTranslucent: Qt.rgba(
+                barColorValue.r, barColorValue.g, barColorValue.b,
+                appSettingsRef.barOpacity)
+
             screen: modelData
-            color: appSettingsRef.barColor
+            color: barTranslucent
             implicitHeight: appSettingsRef.barHeight
             exclusiveZone: implicitHeight
 
