@@ -75,6 +75,7 @@
           self'.packages.myQuickshellStatus
           self'.packages.myWallpaperList
           self'.packages.myToggleBluetooth
+          pkgs.networkmanager
           pkgs.niri
           pkgs.wireplumber
         ];

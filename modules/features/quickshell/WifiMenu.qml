@@ -1,20 +1,25 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 
+// Compact wifi dropdown under the bar's wifi button. Matches the
+// WallpaperPicker card theme. Keyboard: Up/Down select, Return/Enter connect,
+// Esc close.
 PanelWindow {
     id: wifiMenu
 
     property var appSettings
-    property var barWindow
 
-    implicitWidth: 320
-    implicitHeight: 400
-    visible: false
-    color: appSettings ? appSettings.barColor : "#1e1e2e"
-
-    focusable: true
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.exclusiveZone: 0
+    // Exclusive keyboard focus while open: arrows/Enter/Esc work immediately.
+    WlrLayershell.keyboardFocus: wifiMenu.visible
+        ? WlrKeyboardFocus.Exclusive
+        : WlrKeyboardFocus.None
 
     anchors {
         top: true
@@ -22,13 +27,43 @@ PanelWindow {
     }
 
     margins {
-        top: barWindow ? barWindow.height + 4 : 38
+        // The bar's exclusive zone already pushes this Overlay just below the
+        // bar, so only a small visual gap is needed here.
+        top: 4
         right: 12
     }
+
+    focusable: true
+    color: "transparent"
+    visible: false
+    implicitWidth: wifiMenu.cardW
+    implicitHeight: contentColumn.implicitHeight + 2 * wifiMenu.pad
+
+    // Sizing: the card shrink-wraps its content. The network list shows at
+    // most `maxRows` rows and scrolls beyond that.
+    readonly property real pad: 12
+    readonly property real cardW: 320
+    readonly property real rowH: 48
+    readonly property int maxRows: 7
+    readonly property real listH: Math.min(Math.max(wifiMenu.networks.length, 1), wifiMenu.maxRows) * wifiMenu.rowH
+
+    // Theme
+    readonly property color baseColor: appSettings ? appSettings.barColor : "#1e1e2e"
+    readonly property color textColor: appSettings ? appSettings.textColor : "#cdd6f4"
+    readonly property color accentColor: appSettings ? appSettings.accentColor : "#f77af5ff"
+    readonly property color signalStrong: "#a6e3a1"
+    readonly property color signalMid: "#f9e2af"
+    readonly property color signalWeak: "#fab387"
+    readonly property color signalDead: "#f38ba8"
+    readonly property string fontFamily: appSettings ? appSettings.fontFamily : "sans-serif"
+    readonly property string iconFamily: appSettings ? appSettings.iconFontFamily : "JetBrainsMono Nerd Font"
+    readonly property int fontSize: appSettings ? appSettings.fontSize : 13
 
     property bool wifiEnabled: false
     property string currentNetwork: ""
     property var networks: []
+    property var savedNames: []
+    property bool savedLoaded: false
     property bool scanning: false
     property string connectingTo: ""
     property bool showPasswordPrompt: false
@@ -46,7 +81,6 @@ PanelWindow {
         let i = 0
         while (i < line.length) {
             if (line[i] === '\\' && i + 1 < line.length) {
-                // Escaped character — take next char literally
                 current += line[i + 1]
                 i += 2
             } else if (line[i] === ':') {
@@ -62,29 +96,37 @@ PanelWindow {
         return parts
     }
 
-    // Signal strength as filled/empty circles (●○).
-    // Fixed: previously all four branches returned the same emoji.
-    function getSignalIcon(signal) {
-        if (signal >= 75) return "\u25CF\u25CF\u25CF\u25CF"
-        if (signal >= 50) return "\u25CF\u25CF\u25CF\u25CB"
-        if (signal >= 25) return "\u25CF\u25CF\u25CB\u25CB"
-        return "\u25CF\u25CB\u25CB\u25CB"
+    // Signal strength as Nerd Font MDI wifi glyphs (1–4 bars).
+    function getSignalGlyph(signal) {
+        if (signal >= 75) return "\uF0928"
+        if (signal >= 50) return "\uF0925"
+        if (signal >= 25) return "\uF0922"
+        return "\uF091F"
     }
 
-    // Color-code signal strength: green → yellow → orange → red.
     function getSignalColor(signal) {
-        if (signal >= 75) return "#a6e3a1"
-        if (signal >= 50) return "#f9e2af"
-        if (signal >= 25) return "#fab387"
-        return "#f38ba8"
+        if (signal >= 75) return wifiMenu.signalStrong
+        if (signal >= 50) return wifiMenu.signalMid
+        if (signal >= 25) return wifiMenu.signalWeak
+        return wifiMenu.signalDead
     }
 
-    // forceRescan=true  → nmcli triggers a hardware scan (slower, fresh data)
-    // forceRescan=false → nmcli uses cached data (fast, good for background refreshes)
+    // True only when the network is secured AND not already saved, so a saved
+    // profile connects directly without prompting for a password.
+    function needsPassword(net) {
+        if (!net) return false
+        if (net.saved) return false
+        const sec = net.security
+        return sec !== "" && sec !== "--"
+    }
+
+    // forceRescan=true → hardware rescan (slow, fresh); false → cached data.
     function refreshNetworks(forceRescan) {
-        if (scanning) return
-        scanning = true
+        if (wifiMenu.scanning) return
+        wifiMenu.scanning = true
         wifiMenu.networks = []
+        if (!wifiMenu.savedLoaded || forceRescan)
+            wifiConnectionsProcess.running = true
         wifiScanProcess.command = [
             "nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,IN-USE",
             "device", "wifi", "list",
@@ -97,32 +139,46 @@ PanelWindow {
         wifiToggleProcess.running = true
     }
 
-    function connectToNetwork(name, needPassword) {
-        if (needPassword) {
-            selectedNetwork = name
-            showPasswordPrompt = true
-            // Cleanup (focus, text clear) is handled by passwordPrompt.onVisibleChanged
+    function connectToNetwork(network) {
+        if (!network || wifiMenu.connectingTo !== "") return
+        if (network.inUse) {
+            wifiMenu.disconnectWifi()
+            return
+        }
+        if (wifiMenu.needsPassword(network)) {
+            wifiMenu.selectedNetwork = network.ssid
+            wifiMenu.passwordInput = ""
+            wifiMenu.showPasswordPrompt = true
+            Qt.callLater(() => passwd.forceActiveFocus())
         } else {
-            connectingTo = name
-            wifiConnectProcess.command = ["nmcli", "device", "wifi", "connect", name]
+            wifiMenu.connectingTo = network.ssid
+            wifiConnectProcess.command = ["nmcli", "device", "wifi", "connect", network.ssid]
             wifiConnectProcess.running = true
         }
     }
 
     function connectWithPassword() {
-        if (!wifiMenu.passwordInput) return
-        connectingTo = selectedNetwork
-        showPasswordPrompt = false
+        if (!wifiMenu.passwordInput || wifiMenu.connectingTo !== "") return
+        wifiMenu.connectingTo = wifiMenu.selectedNetwork
+        wifiMenu.showPasswordPrompt = false
         wifiConnectProcess.command = [
-            "nmcli", "device", "wifi", "connect", selectedNetwork,
+            "nmcli", "device", "wifi", "connect", wifiMenu.selectedNetwork,
             "password", wifiMenu.passwordInput
         ]
         wifiConnectProcess.running = true
     }
 
     function disconnectWifi() {
-        wifiDisconnectProcess.command = ["nmcli", "device", "disconnect", wifiInterface]
+        if (wifiMenu.connectingTo !== "") return
+        wifiDisconnectProcess.command = ["nmcli", "device", "disconnect", wifiMenu.wifiInterface]
         wifiDisconnectProcess.running = true
+    }
+
+    function activate(indexOrNet) {
+        const net = typeof indexOrNet === "object"
+            ? indexOrNet
+            : (indexOrNet >= 0 ? wifiMenu.networks[indexOrNet] : null)
+        if (net) wifiMenu.connectToNetwork(net)
     }
 
     Process {
@@ -133,12 +189,8 @@ PanelWindow {
                 const newState = text.trim() === "enabled"
                 const wasEnabled = wifiMenu.wifiEnabled
                 wifiMenu.wifiEnabled = newState
-                // If wifi just turned on via toggle, automatically scan.
-                // Fixed: old code did the opposite — it scanned when turning OFF
-                // and cleared the list when turning ON.
-                if (!wasEnabled && newState) {
+                if (!wasEnabled && newState)
                     wifiMenu.refreshNetworks(true)
-                }
             }
         }
     }
@@ -150,12 +202,33 @@ PanelWindow {
             onStreamFinished: {
                 const lines = text.trim().split("\n")
                 for (const line of lines) {
-                    const parts = line.split(":")
+                    const parts = wifiMenu.splitNmcliLine(line)
                     if (parts.length >= 2 && parts[1] === "wifi") {
                         wifiMenu.wifiInterface = parts[0]
                         break
                     }
                 }
+            }
+        }
+    }
+
+    // Saved NetworkManager wifi profiles, used to skip the password prompt for
+    // networks that already carry stored credentials.
+    Process {
+        id: wifiConnectionsProcess
+        command: ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const names = []
+                const lines = text.trim().split("\n")
+                for (const line of lines) {
+                    const parts = wifiMenu.splitNmcliLine(line)
+                    // Wifi-type connections may escape ':' in the NAME field.
+                    if (parts.length >= 2 && parts[1] === "802-11-wireless")
+                        names.push(parts[0])
+                }
+                wifiMenu.savedNames = names
+                wifiMenu.savedLoaded = true
             }
         }
     }
@@ -167,20 +240,15 @@ PanelWindow {
             : ["nmcli", "radio", "wifi", "on"]
         onExited: {
             if (wifiMenu.wifiEnabled) {
-                // wifiEnabled still holds the pre-toggle state here.
-                // Was on → command was "off" → clear the list immediately.
                 wifiMenu.networks = []
                 wifiMenu.currentNetwork = ""
             }
-            // Refresh status. If wifi just turned on, wifiStatusProcess.onStreamFinished
-            // will detect the transition and call refreshNetworks(true).
             wifiStatusProcess.running = true
         }
     }
 
     Process {
         id: wifiScanProcess
-        // Default command; overwritten by refreshNetworks() before each run
         command: ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,IN-USE", "device", "wifi", "list", "--rescan", "yes"]
         stdout: StdioCollector {
             onStreamFinished: {
@@ -192,7 +260,6 @@ PanelWindow {
                 for (const line of lines) {
                     if (!line) continue
 
-                    // Use custom parser to handle SSIDs containing colons
                     const parts = wifiMenu.splitNmcliLine(line)
                     if (parts.length < 4) continue
 
@@ -202,23 +269,27 @@ PanelWindow {
                     const signal = parseInt(parts[1]) || 0
                     const security = parts[2] || ""
                     const inUse = parts[3].trim() === "*"
+                    const saved = wifiMenu.savedLoaded && wifiMenu.savedNames.indexOf(ssid) >= 0
 
-                    if (inUse) current = ssid
-
-                    if (!seen[ssid] || seen[ssid].signal < signal) {
-                        seen[ssid] = { ssid: ssid, signal: signal, security: security, inUse: inUse }
-                    } else if (inUse) {
-                        seen[ssid].inUse = true
+                    const entry = {
+                        ssid: ssid,
+                        signal: signal,
+                        security: security,
+                        inUse: inUse,
+                        saved: saved
                     }
+
+                    if (!seen[ssid] || seen[ssid].signal < signal)
+                        seen[ssid] = entry
                 }
 
                 for (const key in seen) {
-                    nets.push(seen[key])
+                    const e = seen[key]
+                    nets.push(e)
                 }
 
                 nets.sort((a, b) => {
-                    if (a.inUse) return -1
-                    if (b.inUse) return 1
+                    if (a.inUse !== b.inUse) return a.inUse ? -1 : 1
                     return b.signal - a.signal
                 })
 
@@ -227,22 +298,22 @@ PanelWindow {
                 wifiMenu.scanning = false
             }
         }
-        onExited: {
-            // Safety net: ensure scanning is cleared even if stdout was empty
-            wifiMenu.scanning = false
-        }
+        onExited: wifiMenu.scanning = false
     }
 
     Process {
         id: wifiConnectProcess
         onExited: (code) => {
-            // Fixed: capture SSID before clearing connectingTo
-            if (code === 0) {
-                wifiMenu.connectionStatus = "Connected to " + wifiMenu.connectingTo
-            } else {
-                wifiMenu.connectionStatus = "Failed to connect to " + wifiMenu.connectingTo
-            }
+            // Capture the target before connectingTo is cleared below.
+            const target = wifiMenu.connectingTo
             wifiMenu.connectingTo = ""
+            if (code === 0) {
+                wifiMenu.connectionStatus = "Connected to " + target
+                wifiMenu.visible = false
+            } else {
+                wifiMenu.connectionStatus = "Failed to connect to " + target
+                wifiMenu.visible = true
+            }
             statusClearTimer.restart()
             wifiMenu.refreshNetworks(true)
         }
@@ -251,7 +322,9 @@ PanelWindow {
     Process {
         id: wifiDisconnectProcess
         onExited: {
-            // Use cached data — no need for a hardware rescan after disconnect
+            wifiMenu.connectionStatus = "Disconnected"
+            wifiMenu.visible = false
+            statusClearTimer.restart()
             wifiMenu.refreshNetworks(false)
         }
     }
@@ -270,7 +343,6 @@ PanelWindow {
         triggeredOnStart: false
         onTriggered: {
             wifiStatusProcess.running = true
-            // Background refresh: use cached data to avoid slow hardware rescan
             wifiMenu.refreshNetworks(false)
         }
     }
@@ -279,415 +351,490 @@ PanelWindow {
         if (visible) {
             wifiStatusProcess.running = true
             wifiInterfaceProcess.running = true
+            wifiConnectionsProcess.running = true
             wifiMenu.refreshNetworks(true)
+            listView.currentIndex = -1
+            listView.forceActiveFocus()
         } else {
-            // Reset transient state so the menu opens cleanly next time
             wifiMenu.showPasswordPrompt = false
             wifiMenu.connectionStatus = ""
+            wifiMenu.passwordInput = ""
+            passwd.text = ""
             statusClearTimer.stop()
         }
     }
 
-    ColumnLayout {
-        id: contentColumn
+    Rectangle {
+        id: card
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        radius: 14
+        color: Qt.rgba(wifiMenu.baseColor.r, wifiMenu.baseColor.g, wifiMenu.baseColor.b, 0.96)
+        border.color: Qt.rgba(wifiMenu.accentColor.r, wifiMenu.accentColor.g, wifiMenu.accentColor.b, 0.35)
+        border.width: 1
 
-        // Header
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-
-            Text {
-                text: "Wi-Fi"
-                font.pixelSize: 15
-                font.weight: Font.Bold
-                color: appSettings ? appSettings.textColor : "#cdd6f4"
-                Layout.fillWidth: true
-            }
-
-            Text {
-                text: "scanning\u2026"
-                font.pixelSize: 11
-                color: appSettings ? appSettings.textColor : "#cdd6f4"
-                opacity: 0.5
-                visible: wifiMenu.scanning
-            }
-
-            Rectangle {
-                Layout.preferredWidth: 24
-                Layout.preferredHeight: 24
-                radius: 4
-                color: refreshArea.containsMouse
-                    ? Qt.lighter(appSettings ? appSettings.barColor : "#1e1e2e", 1.4)
-                    : "transparent"
-                visible: wifiMenu.wifiEnabled && !wifiMenu.scanning
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "\u21BB"
-                    font.pixelSize: 14
-                    color: appSettings ? appSettings.textColor : "#cdd6f4"
-                    opacity: refreshArea.containsMouse ? 1.0 : 0.7
-                }
-
-                MouseArea {
-                    id: refreshArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: wifiMenu.refreshNetworks(true)
-                }
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: appSettings ? appSettings.accentColor : "#f77af5ff"
-            opacity: 0.3
-        }
-
-        // On/off toggle
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-
-            Text {
-                text: wifiMenu.wifiEnabled ? "Wi-Fi On" : "Wi-Fi Off"
-                font.pixelSize: 13
-                color: appSettings ? appSettings.textColor : "#cdd6f4"
-                Layout.fillWidth: true
-            }
-
-            Rectangle {
-                Layout.preferredWidth: 44
-                Layout.preferredHeight: 24
-                radius: 12
-                color: wifiMenu.wifiEnabled
-                    ? (appSettings ? appSettings.accentColor : "#f77af5ff")
-                    : "#585b70"
-
-                Rectangle {
-                    width: 20
-                    height: 20
-                    radius: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    x: wifiMenu.wifiEnabled ? parent.width - width - 2 : 2
-                    color: "#ffffff"
-
-                    Behavior on x {
-                        NumberAnimation { duration: 150 }
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: wifiMenu.toggleWifi()
-                }
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: appSettings ? appSettings.accentColor : "#f77af5ff"
-            opacity: 0.3
-            visible: wifiMenu.wifiEnabled
-        }
-
-        // Connection status message
-        Text {
-            text: wifiMenu.connectionStatus
-            font.pixelSize: 12
-            color: wifiMenu.connectionStatus.startsWith("Connected") ? "#a6e3a1" : "#f38ba8"
-            visible: wifiMenu.connectionStatus !== ""
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-        }
-
-        // Network list
-        Flickable {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            contentHeight: networkList.implicitHeight
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            visible: wifiMenu.wifiEnabled && !wifiMenu.showPasswordPrompt
-
-            ColumnLayout {
-                id: networkList
-                width: parent.width
-                spacing: 2
-
-                Repeater {
-                    model: wifiMenu.networks
-
-                    Rectangle {
-                        required property var modelData
-                        property bool isConnecting: wifiMenu.connectingTo === modelData.ssid
-
-                        Layout.fillWidth: true
-                        height: 44
-                        radius: 6
-                        color: (netArea.containsMouse && !isConnecting)
-                            ? Qt.lighter(appSettings ? appSettings.barColor : "#1e1e2e", 1.3)
-                            : "transparent"
-                        opacity: isConnecting ? 0.5 : 1.0
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
-                            spacing: 6
-
-                            // Signal strength indicator — color-coded by level
-                            Text {
-                                text: wifiMenu.getSignalIcon(modelData.signal)
-                                font.pixelSize: 10
-                                color: wifiMenu.getSignalColor(modelData.signal)
-                                Layout.preferredWidth: 30
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 0
-
-                                Text {
-                                    text: modelData.ssid
-                                    font.pixelSize: 13
-                                    color: modelData.inUse
-                                        ? (appSettings ? appSettings.accentColor : "#f77af5ff")
-                                        : (appSettings ? appSettings.textColor : "#cdd6f4")
-                                    font.weight: modelData.inUse ? Font.Bold : Font.Normal
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-
-                                Text {
-                                    // Treat "" and "--" both as Open (nmcli uses "" in terse mode)
-                                    text: (modelData.security && modelData.security !== "--")
-                                        ? modelData.security
-                                        : "Open"
-                                    font.pixelSize: 10
-                                    color: appSettings ? appSettings.textColor : "#cdd6f4"
-                                    opacity: 0.5
-                                }
-                            }
-
-                            // Show "…" while connecting, otherwise show signal %
-                            Text {
-                                text: isConnecting ? "\u2026" : (modelData.signal + "%")
-                                font.pixelSize: 11
-                                color: isConnecting
-                                    ? (appSettings ? appSettings.accentColor : "#f77af5ff")
-                                    : (appSettings ? appSettings.textColor : "#cdd6f4")
-                                opacity: isConnecting ? 1.0 : 0.7
-                            }
-
-                            Text {
-                                text: "\u2713"
-                                font.pixelSize: 14
-                                color: appSettings ? appSettings.accentColor : "#f77af5ff"
-                                visible: modelData.inUse && !isConnecting
-                            }
-                        }
-
-                        MouseArea {
-                            id: netArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            // Disable interaction while any connection attempt is running
-                            enabled: wifiMenu.connectingTo === ""
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: {
-                                if (modelData.inUse) {
-                                    wifiMenu.disconnectWifi()
-                                } else {
-                                    const needsPass = modelData.security !== ""
-                                        && modelData.security !== "--"
-                                    wifiMenu.connectToNetwork(modelData.ssid, needsPass)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Text {
-                    text: wifiMenu.scanning
-                        ? "Scanning for networks\u2026"
-                        : "No networks found"
-                    font.pixelSize: 12
-                    color: appSettings ? appSettings.textColor : "#cdd6f4"
-                    opacity: 0.5
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: wifiMenu.networks.length === 0
-                    topPadding: 12
-                    bottomPadding: 8
-                }
-            }
-        }
-
-        // Password prompt
         ColumnLayout {
-            id: passwordPrompt
-            Layout.fillWidth: true
-            spacing: 8
-            visible: wifiMenu.showPasswordPrompt
+            id: contentColumn
+            anchors.fill: parent
+            anchors.margins: wifiMenu.pad
+            spacing: 6
 
-            onVisibleChanged: {
-                if (visible) {
-                    // Reset prompt state each time it opens
-                    passInput.text = ""
-                    showPassToggle.showPassword = false
-                    Qt.callLater(() => passInput.forceActiveFocus())
-                }
-            }
-
-            Text {
-                text: "Connect to: " + wifiMenu.selectedNetwork
-                font.pixelSize: 13
-                font.weight: Font.Bold
-                color: appSettings ? appSettings.textColor : "#cdd6f4"
-                elide: Text.ElideRight
-                Layout.fillWidth: true
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 36
-                radius: 6
-                color: Qt.darker(appSettings ? appSettings.barColor : "#1e1e2e", 1.3)
-                border.color: passInput.activeFocus
-                    ? (appSettings ? appSettings.accentColor : "#f77af5ff")
-                    : "transparent"
-                border.width: passInput.activeFocus ? 1 : 0
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 4
-                    spacing: 4
-
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-
-                        TextInput {
-                            id: passInput
-                            anchors.fill: parent
-                            verticalAlignment: TextInput.AlignVCenter
-                            color: appSettings ? appSettings.textColor : "#cdd6f4"
-                            font.pixelSize: 13
-                            echoMode: showPassToggle.showPassword
-                                ? TextInput.Normal
-                                : TextInput.Password
-                            passwordCharacter: "\u2022"
-                            clip: true
-                            onTextChanged: wifiMenu.passwordInput = text
-
-                            Keys.onReturnPressed: wifiMenu.connectWithPassword()
-                            Keys.onEscapePressed: {
-                                wifiMenu.showPasswordPrompt = false
-                                passInput.text = ""
-                            }
-                        }
-
-                        // Placeholder text
-                        Text {
-                            anchors.fill: parent
-                            verticalAlignment: Text.AlignVCenter
-                            text: "Password"
-                            font.pixelSize: 13
-                            color: appSettings ? appSettings.textColor : "#cdd6f4"
-                            opacity: 0.3
-                            visible: passInput.text.length === 0
-                        }
-                    }
-
-                    // Show / hide password toggle
-                    Item {
-                        id: showPassToggle
-                        property bool showPassword: false
-                        Layout.preferredWidth: 36
-                        Layout.fillHeight: true
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: showPassToggle.showPassword ? "hide" : "show"
-                            font.pixelSize: 10
-                            color: showPassMouse.containsMouse
-                                ? (appSettings ? appSettings.accentColor : "#f77af5ff")
-                                : (appSettings ? appSettings.textColor : "#cdd6f4")
-                            opacity: showPassMouse.containsMouse ? 1.0 : 0.5
-                        }
-
-                        MouseArea {
-                            id: showPassMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: showPassToggle.showPassword = !showPassToggle.showPassword
-                        }
-                    }
-                }
-            }
-
+            // Header: icon, title + dynamic subtitle, refresh button.
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
 
-                Rectangle {
+                Text {
+                    text: "\uF1EB"
+                    font.family: wifiMenu.iconFamily
+                    font.pixelSize: wifiMenu.fontSize + 4
+                    color: wifiMenu.accentColor
+                }
+
+                ColumnLayout {
                     Layout.fillWidth: true
-                    height: 32
-                    radius: 6
-                    color: cancelArea.containsMouse
-                        ? Qt.lighter(appSettings ? appSettings.barColor : "#1e1e2e", 1.4)
-                        : Qt.darker(appSettings ? appSettings.barColor : "#1e1e2e", 1.3)
+                    spacing: 0
 
                     Text {
-                        anchors.centerIn: parent
-                        text: "Cancel"
-                        font.pixelSize: 12
-                        color: appSettings ? appSettings.textColor : "#cdd6f4"
+                        Layout.fillWidth: true
+                        text: "Wi-Fi"
+                        font.family: wifiMenu.fontFamily
+                        font.pixelSize: wifiMenu.fontSize + 2
+                        font.weight: Font.Bold
+                        color: wifiMenu.textColor
                     }
 
-                    MouseArea {
-                        id: cancelArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            wifiMenu.showPasswordPrompt = false
-                            passInput.text = ""
-                        }
+                    Text {
+                        Layout.fillWidth: true
+                        text: wifiMenu.wifiEnabled
+                            ? (wifiMenu.scanning
+                                ? "Scanning\u2026"
+                                : (wifiMenu.networks.length + " networks found"))
+                            : "Wi-Fi is off"
+                        font.family: wifiMenu.fontFamily
+                        font.pixelSize: wifiMenu.fontSize - 3
+                        color: wifiMenu.textColor
+                        opacity: 0.5
+                        elide: Text.ElideRight
                     }
                 }
 
                 Rectangle {
-                    Layout.fillWidth: true
-                    height: 32
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
                     radius: 6
-                    color: connectArea.containsMouse
-                        ? Qt.lighter(appSettings ? appSettings.accentColor : "#f77af5ff", 1.1)
-                        : (appSettings ? appSettings.accentColor : "#f77af5ff")
+                    color: refreshArea.containsMouse
+                        ? Qt.lighter(wifiMenu.baseColor, 1.4)
+                        : "transparent"
+                    visible: wifiMenu.wifiEnabled && !wifiMenu.scanning
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Connect"
-                        font.pixelSize: 12
-                        font.weight: Font.Bold
-                        color: appSettings ? appSettings.barColor : "#1e1e2e"
+                        text: "\uF021"
+                        font.family: wifiMenu.iconFamily
+                        font.pixelSize: wifiMenu.fontSize - 1
+                        color: wifiMenu.textColor
+                        opacity: refreshArea.containsMouse ? 1.0 : 0.7
                     }
 
                     MouseArea {
-                        id: connectArea
+                        id: refreshArea
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: wifiMenu.connectWithPassword()
+                        onClicked: wifiMenu.refreshNetworks(true)
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 1
+                color: wifiMenu.accentColor
+                opacity: 0.3
+            }
+
+            // On/off toggle.
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: wifiMenu.wifiEnabled ? "Turned on" : "Turned off"
+                    font.family: wifiMenu.fontFamily
+                    font.pixelSize: wifiMenu.fontSize
+                    color: wifiMenu.textColor
+                    Layout.fillWidth: true
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 44
+                    Layout.preferredHeight: 24
+                    radius: 12
+                    color: wifiMenu.wifiEnabled ? wifiMenu.accentColor : "#585b70"
+
+                    Rectangle {
+                        width: 20
+                        height: 20
+                        radius: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: wifiMenu.wifiEnabled ? parent.width - width - 2 : 2
+                        color: "#ffffff"
+
+                        Behavior on x {
+                            NumberAnimation { duration: 150 }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: wifiMenu.toggleWifi()
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 1
+                color: wifiMenu.accentColor
+                opacity: 0.3
+                visible: wifiMenu.wifiEnabled
+            }
+
+            // Transient status / error message.
+            Text {
+                Layout.fillWidth: true
+                visible: wifiMenu.connectionStatus !== ""
+                text: wifiMenu.connectionStatus
+                font.family: wifiMenu.fontFamily
+                font.pixelSize: wifiMenu.fontSize - 1
+                color: wifiMenu.connectionStatus.startsWith("Connected")
+                    ? wifiMenu.signalStrong
+                    : wifiMenu.signalDead
+                wrapMode: Text.WordWrap
+            }
+
+            // Network list.
+            ListView {
+                id: listView
+                Layout.fillWidth: true
+                Layout.preferredHeight: wifiMenu.showPasswordPrompt ? 0 : wifiMenu.listH
+                visible: wifiMenu.wifiEnabled && !wifiMenu.showPasswordPrompt && wifiMenu.networks.length > 0
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: wifiMenu.networks
+                focus: wifiMenu.visible && !wifiMenu.showPasswordPrompt
+                keyNavigationWraps: false
+                highlightFollowsCurrentItem: true
+                currentIndex: -1
+
+                Keys.onReturnPressed: event => {
+                    wifiMenu.activate(Math.max(0, listView.currentIndex))
+                    event.accepted = true
+                }
+                Keys.onEnterPressed: event => {
+                    wifiMenu.activate(Math.max(0, listView.currentIndex))
+                    event.accepted = true
+                }
+                Keys.onEscapePressed: event => {
+                    wifiMenu.visible = false
+                    event.accepted = true
+                }
+
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+
+                    readonly property bool isCurrent: listView.currentIndex === index
+                    readonly property bool isConnecting: wifiMenu.connectingTo === modelData.ssid
+                    readonly property bool hovered: rowMouse.containsMouse
+
+                    width: listView.width
+                    implicitHeight: wifiMenu.rowH
+                    radius: 8
+                    color: (hovered || isCurrent) && !isConnecting
+                        ? Qt.lighter(wifiMenu.baseColor, 1.35)
+                        : "transparent"
+
+                    Behavior on color { ColorAnimation { duration: 90 } }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 8
+
+                        // Signal glyph, colored by level.
+                        Text {
+                            text: wifiMenu.getSignalGlyph(modelData.signal)
+                            font.family: wifiMenu.iconFamily
+                            font.pixelSize: wifiMenu.fontSize + 2
+                            color: wifiMenu.getSignalColor(modelData.signal)
+                            Layout.preferredWidth: 24
+                            opacity: isConnecting ? 0.4 : 1.0
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData.ssid
+                                font.family: wifiMenu.fontFamily
+                                font.pixelSize: wifiMenu.fontSize
+                                font.weight: modelData.inUse ? Font.Bold : Font.Normal
+                                color: modelData.inUse ? wifiMenu.accentColor : wifiMenu.textColor
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData.inUse
+                                ? "Connected"
+                                : (modelData.saved
+                                    ? "Saved"
+                                    : (modelData.security === "" || modelData.security === "--"
+                                        ? "Open"
+                                        : modelData.security))
+                                font.family: wifiMenu.fontFamily
+                                font.pixelSize: wifiMenu.fontSize - 4
+                                color: modelData.inUse ? wifiMenu.signalStrong : wifiMenu.textColor
+                                opacity: 0.6
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        // Right-side status: connecting dot, signal %, locked/saved/connected.
+                        Text {
+                            text: isConnecting ? "\u2026" : (modelData.signal + "%")
+                            font.family: wifiMenu.fontFamily
+                            font.pixelSize: wifiMenu.fontSize - 2
+                            color: isConnecting ? wifiMenu.accentColor : wifiMenu.textColor
+                            opacity: isConnecting ? 1.0 : 0.55
+                        }
+
+                        Text {
+                            text: modelData.inUse ? "\uF00C" : "\uF023"
+                            font.family: wifiMenu.iconFamily
+                            font.pixelSize: wifiMenu.fontSize - 1
+                            color: modelData.inUse
+                                ? wifiMenu.signalStrong
+                                : (modelData.saved ? wifiMenu.accentColor : wifiMenu.signalWeak)
+                        }
+                    }
+
+                    MouseArea {
+                        id: rowMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: wifiMenu.connectingTo === ""
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onEntered: listView.currentIndex = index
+                        onClicked: wifiMenu.connectToNetwork(modelData)
+                    }
+                }
+            }
+
+            // Placeholder shown in place of the list.
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: wifiMenu.wifiEnabled ? 70 : 64
+                visible: !wifiMenu.showPasswordPrompt && wifiMenu.networks.length === 0
+                spacing: 4
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+
+                    Text {
+                        id: placeholderIcon
+                        // Natural-width text box so the rotation pivot sits at the
+                        // glyph's own center, not the center of a stretched box.
+                        anchors.centerIn: parent
+                        text: !wifiMenu.wifiEnabled
+                            ? "\uF1EB"
+                            : "\uF1CE"
+                        font.family: wifiMenu.iconFamily
+                        font.pixelSize: wifiMenu.fontSize + 8
+                        color: wifiMenu.textColor
+                        opacity: wifiMenu.scanning ? 1.0 : 0.35
+                    }
+
+                    RotationAnimator {
+                        running: wifiMenu.wifiEnabled && wifiMenu.scanning
+                        target: placeholderIcon
+                        from: 0
+                        to: 360
+                        duration: 900
+                        loops: Animation.Infinite
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: !wifiMenu.wifiEnabled
+                        ? "Wi-Fi is off"
+                        : (wifiMenu.scanning ? "Scanning for networks\u2026" : "No networks found")
+                    font.family: wifiMenu.fontFamily
+                    font.pixelSize: wifiMenu.fontSize - 1
+                    color: wifiMenu.textColor
+                    opacity: 0.5
+                }
+            }
+
+            // Password prompt.
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: wifiMenu.showPasswordPrompt
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Connect to: " + wifiMenu.selectedNetwork
+                    font.family: wifiMenu.fontFamily
+                    font.pixelSize: wifiMenu.fontSize
+                    font.weight: Font.Bold
+                    color: wifiMenu.textColor
+                    elide: Text.ElideRight
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 36
+                    radius: 8
+                    color: Qt.darker(wifiMenu.baseColor, 1.3)
+                    border.color: passwd.activeFocus ? wifiMenu.accentColor : "transparent"
+                    border.width: passwd.activeFocus ? 1 : 0
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 4
+                        spacing: 4
+
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            TextInput {
+                                id: passwd
+                                anchors.fill: parent
+                                verticalAlignment: TextInput.AlignVCenter
+                                color: wifiMenu.textColor
+                                font.family: wifiMenu.fontFamily
+                                font.pixelSize: wifiMenu.fontSize
+                                echoMode: passwdShow.showPassword ? TextInput.Normal : TextInput.Password
+                                passwordCharacter: "\u2022"
+                                clip: true
+                                onTextChanged: wifiMenu.passwordInput = text
+
+                                Keys.onReturnPressed: wifiMenu.connectWithPassword()
+                                Keys.onEnterPressed: wifiMenu.connectWithPassword()
+                                Keys.onEscapePressed: {
+                                    wifiMenu.showPasswordPrompt = false
+                                    passwd.text = ""
+                                    wifiMenu.passwordInput = ""
+                                }
+                            }
+
+                            Text {
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                text: "Password"
+                                font.family: wifiMenu.fontFamily
+                                font.pixelSize: wifiMenu.fontSize
+                                color: wifiMenu.textColor
+                                opacity: 0.3
+                                visible: passwd.text.length === 0
+                            }
+                        }
+
+                        // Show / hide password toggle.
+                        Item {
+                            id: passwdShow
+                            property bool showPassword: false
+                            Layout.preferredWidth: 34
+                            Layout.fillHeight: true
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: passwdShow.showPassword ? "\uF070" : "\uF06E"
+                                font.family: wifiMenu.iconFamily
+                                font.pixelSize: wifiMenu.fontSize - 1
+                                color: passwdMouse.containsMouse ? wifiMenu.accentColor : wifiMenu.textColor
+                                opacity: passwdMouse.containsMouse ? 1.0 : 0.6
+                            }
+
+                            MouseArea {
+                                id: passwdMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: passwdShow.showPassword = !passwdShow.showPassword
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 32
+                        radius: 8
+                        color: passwdCancel.containsMouse
+                            ? Qt.lighter(wifiMenu.baseColor, 1.4)
+                            : Qt.darker(wifiMenu.baseColor, 1.3)
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Cancel"
+                            font.family: wifiMenu.fontFamily
+                            font.pixelSize: wifiMenu.fontSize - 1
+                            color: wifiMenu.textColor
+                        }
+
+                        MouseArea {
+                            id: passwdCancel
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                wifiMenu.showPasswordPrompt = false
+                                passwd.text = ""
+                                wifiMenu.passwordInput = ""
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 32
+                        radius: 8
+                        color: passwdConnect.containsMouse
+                            ? Qt.lighter(wifiMenu.accentColor, 1.1)
+                            : wifiMenu.accentColor
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Connect"
+                            font.family: wifiMenu.fontFamily
+                            font.pixelSize: wifiMenu.fontSize - 1
+                            font.weight: Font.Bold
+                            color: wifiMenu.baseColor
+                        }
+
+                        MouseArea {
+                            id: passwdConnect
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: wifiMenu.connectWithPassword()
+                        }
                     }
                 }
             }

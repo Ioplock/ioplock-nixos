@@ -95,6 +95,11 @@ ShellRoot {
         appSettings: appSettings
     }
 
+    WifiMenu {
+        id: wifiMenu
+        appSettings: appSettings
+    }
+
     IpcHandler {
         target: "wallpaperPicker"
 
@@ -298,6 +303,8 @@ ShellRoot {
                             text: root.status[4]
                             textColor: root.wifiConnected() ? appSettingsRef.accentColor : appSettingsRef.textColor
                             dimmed: !root.wifiConnected()
+                            clickable: true
+                            onActivated: wifiMenu.visible = !wifiMenu.visible
                         }
 
                         BarButton {
