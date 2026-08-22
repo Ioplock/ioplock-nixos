@@ -6,6 +6,10 @@
       # Sunshine is a systemd *user* service bound to graphical-session.target,
       # which uwsm activates for the autologin niri session. KMS capture needs
       # CAP_SYS_ADMIN; the forced-EDID head provides the display.
+      # Moonlight discovers hosts via mDNS; the upstream module enables
+      # avahi advertisement but does not open the mDNS port itself.
+      networking.firewall.allowedUDPPorts = [ 5353 ];
+
       services.sunshine = {
         enable = true;
         autoStart = true;
