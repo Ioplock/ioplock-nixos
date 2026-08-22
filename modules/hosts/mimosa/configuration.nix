@@ -7,8 +7,13 @@
       # import any other modules from here
       imports = [
         self.nixosModules.mimosaHardware
+        self.nixosModules.audio
+        self.nixosModules.cliphist
+        self.nixosModules.firefox
         self.nixosModules.git
         self.nixosModules.nh
+        self.nixosModules.niri
+        self.nixosModules.rofi
         self.nixosModules.shell
         self.nixosModules.ssh
         self.nixosModules.user
@@ -64,6 +69,11 @@
       };
 
       programs.nh.flake = "/home/mimosa/nixconf";
+
+      # ==================================================
+      # Desktop (gaming niri: wallpaper only, no status bar)
+      # ==================================================
+      myNiri.package = self.packages.${pkgs.stdenv.hostPlatform.system}.myNiriGaming;
 
       # ==================================================
       # SSH

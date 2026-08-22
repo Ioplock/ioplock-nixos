@@ -9,6 +9,10 @@ ShellRoot {
     property var status: ["?", "Desktop", "unknown", "unknown", "disconnected", "off", "AC"]
     property date dateTime: new Date()
 
+    // QS_MINIMAL=1 (gaming niri build) hides the status bar, leaving only
+    // the wallpaper background and picker.
+    readonly property bool minimal: Quickshell.env("QS_MINIMAL") === "1"
+
     Settings {
         id: appSettings
     }
@@ -110,7 +114,7 @@ ShellRoot {
 
     Variants {
         id: barVariants
-        model: Quickshell.screens
+        model: root.minimal ? [] : Quickshell.screens
 
         delegate: PanelWindow {
             id: bar

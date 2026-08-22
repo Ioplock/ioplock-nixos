@@ -12,70 +12,77 @@
       uwsm = lib.getExe config.programs.uwsm.package;
     in
     {
-      programs.niri = {
-        enable = true;
-        package = self.packages.${pkgs.stdenv.hostPlatform.system}.myDesktop;
+      options.myNiri.package = lib.mkOption {
+        type = lib.types.package;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.myDesktop;
+        description = "Niri wrapper package this host runs; greetd autologins into it.";
       };
 
-      programs.uwsm.enable = true;
+      config = {
+        programs.niri = {
+          enable = true;
+          package = config.myNiri.package;
+        };
 
-      xdg.portal = {
-        enable = true;
-        extraPortals = [
-          pkgs.xdg-desktop-portal-gtk
-          pkgs.xdg-desktop-portal-gnome
-          pkgs.xdg-desktop-portal-termfilechooser
-        ];
-        config = {
-          common = {
-            default = [ "gtk" ];
-            "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
-            "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
-            "org.freedesktop.impl.portal.Screenshot" = [ "gnome" ];
-            "org.freedesktop.impl.portal.ScreenCast" = [ "gnome" ];
+        programs.uwsm.enable = true;
+
+        xdg.portal = {
+          enable = true;
+          extraPortals = [
+            pkgs.xdg-desktop-portal-gtk
+            pkgs.xdg-desktop-portal-gnome
+            pkgs.xdg-desktop-portal-termfilechooser
+          ];
+          config = {
+            common = {
+              default = [ "gtk" ];
+              "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+              "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
+              "org.freedesktop.impl.portal.Screenshot" = [ "gnome" ];
+              "org.freedesktop.impl.portal.ScreenCast" = [ "gnome" ];
+            };
+            niri = {
+              "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+            };
           };
-          niri = {
-            "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+        };
+
+        services.gnome.gnome-keyring.enable = true;
+
+        services.udev.packages = [ pkgs.brightnessctl ];
+
+        environment.sessionVariables = {
+          # Fix for Chromium/Electron apps (VS Code, Discord, etc.)
+          NIXOS_OZONE_WL = "1";
+
+          # Hardware acceleration for Firefox
+          MOZ_ENABLE_WAYLAND = "1";
+
+          # Force toolkit backend to Wayland
+          GTK_USE_PORTAL = "1";
+          QT_QPA_PLATFORM = "wayland;xcb"; # Qt apps
+          # Terminal emulator used by the termfilechooser portal to open yazi.
+          # ghostty needs `-e` to treat the trailing command (yazi + args) as a
+          # program to run; `--title <v>` (space form) would be parsed as ghostty fields.
+          TERMCMD = "${lib.getExe pkgs.ghostty} -e";
+          SDL_VIDEODRIVER = "wayland"; # Games and SDL apps
+          CLUTTER_BACKEND = "wayland"; # Clutter apps
+
+          # Java apps (like IntelliJ or older games)
+          _JAVA_AWT_WM_NONREPARENTING = "1";
+        };
+
+        services.greetd = {
+          enable = true;
+          settings = rec {
+            initial_session = {
+              command = "${uwsm} start -F -- ${niri} --session";
+              user = config.myUser.name;
+            };
+            default_session = initial_session;
           };
         };
       };
-
-      services.gnome.gnome-keyring.enable = true;
-
-      services.udev.packages = [ pkgs.brightnessctl ];
-
-      environment.sessionVariables = {
-        # Fix for Chromium/Electron apps (VS Code, Discord, etc.)
-        NIXOS_OZONE_WL = "1";
-
-        # Hardware acceleration for Firefox
-        MOZ_ENABLE_WAYLAND = "1";
-
-        # Force toolkit backend to Wayland
-        GTK_USE_PORTAL = "1";
-        QT_QPA_PLATFORM = "wayland;xcb"; # Qt apps
-        # Terminal emulator used by the termfilechooser portal to open yazi.
-        # ghostty needs `-e` to treat the trailing command (yazi + args) as a
-        # program to run; `--title <v>` (space form) would be parsed as ghostty fields.
-        TERMCMD = "${lib.getExe pkgs.ghostty} -e";
-        SDL_VIDEODRIVER = "wayland"; # Games and SDL apps
-        CLUTTER_BACKEND = "wayland"; # Clutter apps
-
-        # Java apps (like IntelliJ or older games)
-        _JAVA_AWT_WM_NONREPARENTING = "1";
-      };
-
-      services.greetd = {
-        enable = true;
-        settings = rec {
-          initial_session = {
-            command = "${uwsm} start -F -- ${niri} --session";
-            user = config.myUser.name;
-          };
-          default_session = initial_session;
-        };
-      };
-
     };
 
   perSystem =
