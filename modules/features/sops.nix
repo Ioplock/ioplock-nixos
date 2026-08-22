@@ -25,12 +25,17 @@
   perSystem =
     { pkgs, ... }:
     {
-      # Helper to derive the age recipient (public key) from the host's
-      # SSH ed25519 public key and write it into .sops.yaml.
-      # Run once after first boot, from the repo root:
+      # Helper to derive the age recipient (public key) from THIS host's
+      # SSH ed25519 public key and register it in .sops.yaml.
+      # Run once per host after first boot, from the repo root:
       #   nix run .#sops-init-recipient
-      # Then re-encrypt the secret with real values:
-      #   nix shell nixpkgs#sops -- sops secrets/sing-box-outbounds.json
+      # Behaviour:
+      #   - fresh repo (placeholder present): replaces the placeholder
+      #   - host already registered: no-op
+      #   - otherwise: appends this host under keys: and adds it to every
+      #     creation_rules age list, then sync existing secrets to the new
+      #     recipients with:
+      #   nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json
       packages.sops-init-recipient = pkgs.writeShellApplication {
         name = "sops-init-recipient";
         runtimeInputs = [
@@ -67,21 +72,42 @@
             exit 1
           fi
 
-          echo "Derived age recipient: $RECIPIENT"
+          PLACEHOLDER='age1PLACEHOLDER_REPLACE_VIA_sops-init-recipient'
 
-          if ! grep -q 'age1PLACEHOLDER_REPLACE_VIA_sops-init-recipient' "$SOPS_YAML"; then
-            echo "ERROR: placeholder not found in $SOPS_YAML." >&2
-            echo "       It looks like .sops.yaml was already updated." >&2
+          # Fresh-repo bootstrap: swap the placeholder for this host.
+          if grep -q "$PLACEHOLDER" "$SOPS_YAML"; then
+            sed -i "s|$PLACEHOLDER|$RECIPIENT|g" "$SOPS_YAML"
+            echo "Bootstrap: replaced placeholder with $RECIPIENT."
+            exit 0
+          fi
+
+          # Idempotent: nothing to do if this host is already a recipient.
+          if grep -q "$RECIPIENT" "$SOPS_YAML"; then
+            echo "Host recipient $RECIPIENT already registered in $SOPS_YAML."
+            exit 0
+          fi
+
+          HOST="$(hostname | tr -cd 'a-zA-Z0-9' | tr 'A-Z' 'a-z')"
+          if [ -z "$HOST" ]; then
+            echo "ERROR: could not determine hostname for anchor name." >&2
+            exit 1
+          fi
+          if grep -q "&$HOST " "$SOPS_YAML"; then
+            echo "ERROR: anchor &$HOST already exists with a different key." >&2
             exit 1
           fi
 
-          sed -i "s|age1PLACEHOLDER_REPLACE_VIA_sops-init-recipient|$RECIPIENT|g" "$SOPS_YAML"
-          echo "Updated $SOPS_YAML with the host's age recipient."
+          # Additional host: append to keys:, add an alias to every
+          # creation_rules age list.
+          sed -i "/^creation_rules:/i\\
+          - &$HOST $RECIPIENT" "$SOPS_YAML"
+          sed -i "/^          - \\*/a\\
+          - *$HOST" "$SOPS_YAML"
+
+          echo "Registered $HOST as $RECIPIENT."
           echo ""
-          echo "Next steps:"
-          echo "  1. Re-encrypt the secret with real outbound values:"
-          echo "     nix run .#sops-edit -- --reset secrets/sing-box-outbounds.json"
-          echo "  2. Deploy (the user decides when to switch)."
+          echo "Next step — sync existing secrets to the new recipients:"
+          echo "  nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json"
         '';
       };
 
@@ -125,21 +151,23 @@
 
           KEY_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/sops/age"
           KEY_FILE="$KEY_DIR/keys.txt"
-          mkdir -p "$KEY_DIR"
-          chmod 700 "$KEY_DIR"
 
-          # The host SSH private key is root-only; fall back to the system
-          # setuid sudo (NixOS: /run/wrappers/bin/sudo) to read it.
-          if [ -r "$SSH_KEY" ]; then
-            ssh-to-age -private-key -i "$SSH_KEY" > "$KEY_FILE"
-          else
-            SUDO="$(command -v sudo || true)"
-            if [ -z "$SUDO" ]; then
-              echo "ERROR: sudo not found and $SSH_KEY is not readable as $(id -un)." >&2
-              exit 1
+          # Prefer an existing user-managed age key; only derive one from the
+          # host SSH key (root-only; via setuid sudo) when none is present.
+          if [ ! -f "$KEY_FILE" ]; then
+            mkdir -p "$KEY_DIR"
+            chmod 700 "$KEY_DIR"
+            if [ -r "$SSH_KEY" ]; then
+              ssh-to-age -private-key -i "$SSH_KEY" > "$KEY_FILE"
+            else
+              SUDO="$(command -v sudo || true)"
+              if [ -z "$SUDO" ]; then
+                echo "ERROR: sudo not found and $SSH_KEY is not readable as $(id -un)." >&2
+                exit 1
+              fi
+              echo "Host SSH key not readable as $(id -un); using $SUDO to convert it." >&2
+              "$SUDO" ssh-to-age -private-key -i "$SSH_KEY" | tee "$KEY_FILE" >/dev/null
             fi
-            echo "Host SSH key not readable as $(id -un); using $SUDO to convert it." >&2
-            "$SUDO" ssh-to-age -private-key -i "$SSH_KEY" | tee "$KEY_FILE" >/dev/null
           fi
           chmod 600 "$KEY_FILE"
 

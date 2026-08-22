@@ -1,11 +1,13 @@
 keys:
-  # Replace this placeholder with the host's age recipient.
-  # Run `nix run .#sops-init-recipient` on the host after first boot to derive it
-  # from /etc/ssh/ssh_host_ed25519_key.pub via ssh-to-age, then re-encrypt
-  # secrets/sing-box-outbounds.json with the real recipient.
+  # One anchor per host. Register a new host from the host itself:
+  #   nix run .#sops-init-recipient
+  # then re-encrypt all secrets so every listed host can decrypt:
+  #   nix run .#sops-edit -- -e -i secrets/sing-box-outbounds.json
   - &acrux age1vjjve4xm7a8gc2es5yelngpn8yjskfptd7ahyjr4e3k7p0kawylsphwazy
+  - &mimosa age1fnkd9ujtym3l9acrhupdtaz4sluf3pkq59mqymxtnskkaqdf3dnq77kjjt
 creation_rules:
   - path_regex: secrets/.*\.json$
     key_groups:
       - age:
           - *acrux
+          - *mimosa
