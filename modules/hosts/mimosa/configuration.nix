@@ -9,14 +9,19 @@
         self.nixosModules.mimosaHardware
         self.nixosModules.audio
         self.nixosModules.cliphist
+        self.nixosModules.docker
         self.nixosModules.firefox
         self.nixosModules.git
         self.nixosModules.nh
         self.nixosModules.niri
+        self.nixosModules.opencode
         self.nixosModules.rofi
         self.nixosModules.shell
         self.nixosModules.ssh
+        self.nixosModules.steam
         self.nixosModules.user
+        self.nixosModules.vscode
+        self.nixosModules.yazi
       ];
 
       # ==================================================
@@ -82,6 +87,14 @@
       # Desktop (gaming niri: wallpaper only, no status bar)
       # ==================================================
       myNiri.package = self.packages.${pkgs.stdenv.hostPlatform.system}.myNiriGaming;
+
+      # ==================================================
+      # Video
+      # ==================================================
+      hardware.graphics = {
+        enable = true;
+        enable32Bit = true; # Required by Steam/Wine 32-bit games.
+      };
 
       # ==================================================
       # SSH
