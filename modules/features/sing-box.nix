@@ -116,6 +116,13 @@
               }
             ];
             rules = [
+              # Never send RFC1918/link-local destinations through the tunnel,
+              # otherwise browsers using this proxy cannot reach LAN services
+              # (Sunshine web UI, routers, printers, ...).
+              {
+                ip_is_private = true;
+                outbound = "direct";
+              }
               {
                 domain_suffix = [
                   ".ru"
