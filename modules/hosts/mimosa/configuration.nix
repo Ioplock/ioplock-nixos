@@ -54,7 +54,7 @@
       # ==================================================
       # Primary account, consumed by the user/git features.
       myUser = {
-        name = "ioplock";
+        name = "mimosa";
         fullName = "Ioplock";
         email = "ioplock.me@gmail.com";
         authorizedKeys = [
@@ -62,7 +62,7 @@
         ];
       };
 
-      programs.nh.flake = "/home/ioplock/nixconf";
+      programs.nh.flake = "/home/mimosa/nixconf";
 
       # ==================================================
       # SSH
