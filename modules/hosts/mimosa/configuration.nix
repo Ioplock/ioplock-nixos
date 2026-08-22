@@ -59,6 +59,7 @@
         email = "ioplock.me@gmail.com";
         authorizedKeys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO2reTQCZyP5XULzWNsQ0iVGxwYylpkW8xuK1hG+DaE9 ioplock.me@gmail.com"
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGmxqTkkihZlO5FEriD9Xxp8do+3GbVxR7xsa9V/aHGE daniiilbackto2007@gmail.com"
         ];
       };
 
