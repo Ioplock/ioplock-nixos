@@ -5,7 +5,7 @@ import Quickshell.Io
 QtObject {
     id: settings
 
-    readonly property string settingsPath: "/home/ioplock/.config/quickshell/settings.json"
+    readonly property string settingsPath: Quickshell.env("HOME") + "/.config/quickshell/settings.json"
 
 property int barHeight: 34
             property real barOpacity: 0.96

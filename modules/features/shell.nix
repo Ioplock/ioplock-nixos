@@ -108,7 +108,7 @@
         opencode-proxy = lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.myOpencodeProxy;
         ".." = "cd ..";
         "..." = "cd ../..";
-        rebuild-check = "nix flake check && nixos-rebuild dry-build --flake .#acrux";
+        rebuild-check = "nix flake check && nixos-rebuild dry-build --flake .#$(hostname)";
       };
 
       zshrc.content = ''

@@ -20,6 +20,7 @@
         self.nixosModules.singBox
         self.nixosModules.sops
         self.nixosModules.ssh
+        self.nixosModules.user
         self.nixosModules.shell
         self.nixosModules.niri
         self.nixosModules.vscode
@@ -74,9 +75,11 @@
       # ==================================================
       # Users
       # ==================================================
-      # Define a user account. Don't forget to set a password with 'passwd'.
-      users.users.ioplock = {
-        isNormalUser = true;
+      # Primary account, consumed by the user/niri/git features.
+      myUser = {
+        name = "ioplock";
+        fullName = "Ioplock";
+        email = "ioplock.me@gmail.com";
         extraGroups = [
           "wheel"
           "input"

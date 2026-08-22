@@ -70,7 +70,7 @@
         settings = rec {
           initial_session = {
             command = "${uwsm} start -F -- ${niri} --session";
-            user = "ioplock";
+            user = config.myUser.name;
           };
           default_session = initial_session;
         };
