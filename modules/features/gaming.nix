@@ -32,6 +32,8 @@
 
           xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
 
+          cursor.xcursor-size = 16;
+
           input = {
             keyboard = {
               xkb = {

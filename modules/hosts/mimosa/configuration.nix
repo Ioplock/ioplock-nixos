@@ -39,6 +39,14 @@
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
 
+      # Headless-ready GPU: force the connector on with a synthetic EDID so
+      # niri keeps rendering with no display attached. Remove once a real
+      # monitor with different native resolution is meant to be driven.
+      boot.kernelParams = [
+        "video=HDMI-A-1:e"
+        "drm.edid_firmware=HDMI-A-1:edid/1920x1080.bin"
+      ];
+
       # ==================================================
       # Networking
       # ==================================================
