@@ -40,7 +40,9 @@
         extraPackages = [ self'.packages.generateLabel ];
         runShell = [
           ''
-            export NIXOS_LABEL=$(generate-label 2>/dev/null || echo "unknown")
+            flake_dir="''${NH_FLAKE%%#*}"
+            label="$(cd "$flake_dir" 2>/dev/null && generate-label 2>/dev/null)" || true
+            export NIXOS_LABEL="''${label:-unknown}"
             exec ${lib.getExe pkgs.nh} "$@" -- --impure
           ''
         ];
