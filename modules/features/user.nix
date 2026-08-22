@@ -29,6 +29,11 @@
               default = false;
               description = "Start the user manager at boot, before login.";
             };
+            authorizedKeys = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              description = "SSH public keys authorized to log in as the primary user.";
+            };
           };
         };
       };
@@ -37,6 +42,7 @@
         isNormalUser = true;
         extraGroups = config.myUser.extraGroups;
         inherit (config.myUser) linger;
+        openssh.authorizedKeys.keys = config.myUser.authorizedKeys;
       };
     };
 }
