@@ -67,7 +67,7 @@ The setup uses a **split-config** pattern:
 | `modules/features/sing-box.nix` | NixOS module: custom sing-box build, DNS/inbounds/routing config, `ExecStartPre` that installs decrypted outbounds |
 | `secrets/sing-box-outbounds.json` | Encrypted secret (AES256_GCM, age-encrypted) |
 | `secrets/sing-box-outbounds.json.example` | Plaintext template with placeholder values |
-| `modules/hosts/acrux/configuration.nix` | Host config that imports `self.nixosModules.sops` and `self.nixosModules.singBox` |
+| `modules/hosts/*/configuration.nix` | Host configs importing `self.nixosModules.sops` and `self.nixosModules.singBox`; currently acrux and mimosa |
 
 ---
 
@@ -182,8 +182,8 @@ Key points:
 
 #### `sops-init-recipient`
 
-Run once on a fresh host to derive the age public key from the SSH host key
-and patch `.sops.yaml`:
+Run on a fresh or newly-added host to derive the age public key from its
+SSH host key and register it in `.sops.yaml`:
 
 ```bash
 nix run .#sops-init-recipient
@@ -192,28 +192,40 @@ nix run .#sops-init-recipient
 What it does:
 1. Reads `/etc/ssh/ssh_host_ed25519_key.pub`
 2. Converts to `age1...` via `ssh-to-age`
-3. Replaces the `age1PLACEHOLDER_REPLACE_VIA_sops-init-recipient` token in
-   `.sops.yaml` with the real recipient
-4. Idempotent — refuses to run if placeholder is already gone
+3. Registers the recipient in `.sops.yaml`, depending on state:
+   - placeholder present → replaces it (fresh-repo bootstrap)
+   - already present → idempotent no-op
+   - otherwise → appends a `- &<hostname> <recipient>` anchor under
+     `keys:` and adds the alias to every creation rule's age list
+4. Prints the follow-up sync command (`sops-edit -- updatekeys`)
 
 #### `sops-edit`
 
-Drop-in replacement for the `sops` CLI that auto-derives the age private key:
+Drop-in replacement for the `sops` CLI that manages the age private key
+for you:
 
 ```bash
 # Normal edit:
 nix run .#sops-edit -- secrets/sing-box-outbounds.json
 
-# Reset (first time — re-encrypt from example template):
+# Reset (fresh repo — re-encrypt from example template):
 nix run .#sops-edit -- --reset secrets/sing-box-outbounds.json
+
+# Apply current .sops.yaml creation rules to an already-encrypted file:
+nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json
 ```
 
 What it does:
-1. Derives age private key from `/etc/ssh/ssh_host_ed25519_key` via
-   `ssh-to-age -private-key` (uses sudo if key is root-only)
-2. Writes it to `$XDG_CONFIG_HOME/sops/age/keys.txt` (outside the repo)
-3. Sets `SOPS_AGE_KEY_FILE` and runs `sops` with the provided arguments
-4. `--reset` mode: copies `.example` over the target, encrypts fresh
+1. Uses `$XDG_CONFIG_HOME/sops/age/keys.txt` when it exists; only when it
+   does not, derives the private key from `/etc/ssh/ssh_host_ed25519_key`
+   via `ssh-to-age -private-key` (sudo if root-only) and writes it there
+2. Sets `SOPS_AGE_KEY_FILE` and runs `sops` with the provided arguments
+3. `--reset` mode: copies `.example` over the target, encrypts fresh
+
+Gotchas baked into this design: plain `sops -e -i` refuses files that are
+already encrypted, and `sops rotate -i` re-uses a file's existing recipients
+without consulting `.sops.yaml`. To change *who* can decrypt, use
+`updatekeys`; to change *what* is inside, use a normal edit.
 
 ---
 
@@ -304,17 +316,23 @@ systemd.services.sing-box = {
 ```yaml
 keys:
   - &acrux age1vjjve4xm7a8gc2es5yelngpn8yjskfptd7ahyjr4e3k7p0kawylsphwazy
+  - &mimosa age1fnkd9ujtym3l9acrhupdtaz4sluf3pkq59mqymxtnskkaqdf3dnq77kjjt
 creation_rules:
   - path_regex: secrets/.*\.json$
     key_groups:
       - age:
           - *acrux
+          - *mimosa
 ```
 
-- YAML anchor `&acrux` defines the age public key for host `acrux`
-- `creation_rules` applies to all files matching `secrets/.*\.json$`
-- The age public key is safe to commit — only the SSH host private key on
+- One YAML anchor per host defines that host's age public key (derived from
+  its SSH ed25519 key)
+- `creation_rules` applies to all files matching `secrets/.*\.json$` and
+  encrypts them for every listed host
+- Age public keys are safe to commit — only the SSH host private keys on
   disk can decrypt
+- Register additional hosts with `nix run .#sops-init-recipient` on the
+  host itself, then sync existing secrets with `sops-edit -- updatekeys`
 
 ---
 
@@ -339,7 +357,7 @@ last modified timestamp. Safe to commit.
 
 ## Host Wiring
 
-In `modules/hosts/acrux/configuration.nix`:
+In each host's `configuration.nix` (currently acrux and mimosa):
 
 ```nix
 imports = [
@@ -371,8 +389,8 @@ Both helpers are defined in `modules/features/sops.nix` under `perSystem`.
 | Package | `packages.sops-init-recipient` |
 | Runtime deps | `openssh`, `ssh-to-age`, `gnused`, `git` |
 | Usage | `nix run .#sops-init-recipient` |
-| What it does | Reads SSH pub key → converts to age → patches `.sops.yaml` |
-| Idempotent | Yes — refuses if placeholder already replaced |
+| What it does | Reads SSH pub key → converts to age → registers anchor + alias in `.sops.yaml` |
+| Idempotent | Yes — no-op when the host is already registered |
 
 ### sops-edit
 
@@ -380,8 +398,8 @@ Both helpers are defined in `modules/features/sops.nix` under `perSystem`.
 |--------|--------|
 | Package | `packages.sops-edit` |
 | Runtime deps | `openssh`, `ssh-to-age`, `sops`, `coreutils`, `git` |
-| Usage | `nix run .#sops-edit -- [flags] <file>` |
-| What it does | Derives age key from SSH host key → runs `sops` |
+| Usage | `nix run .#sops-edit -- [flags] <file>` (any sops args, incl. `updatekeys`) |
+| What it does | Prefers an existing user age key; derives one from the SSH host key otherwise → runs `sops` |
 | Key location | `$XDG_CONFIG_HOME/sops/age/keys.txt` (outside repo) |
 | `--reset` mode | Copies `.example` over target, encrypts fresh |
 
@@ -405,9 +423,13 @@ encrypted with the real key. Omit `--reset` for normal editing.
 
 ### Activation fails: `sops-decrypt: ... no matching key`
 
-The encrypted file's recipient doesn't match the host's age key.
-Re-run `sops-init-recipient` to confirm `.sops.yaml`, then `--reset` to
-re-encrypt.
+The encrypted file's recipients don't include the host's age key.
+Confirm the host is registered in `.sops.yaml` (`sops-init-recipient`),
+then sync the secret from a host that can already decrypt it:
+
+```bash
+nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json
+```
 
 ### `nix flake check` warns `Git tree is dirty`
 
@@ -423,24 +445,24 @@ Check:
 
 ### Adding a new host
 
-1. Add a new key in `.sops.yaml`:
-   ```yaml
-   keys:
-     - &acrux age1...
-     - &newhost age1...   # derive via sops-init-recipient on the new host
-   creation_rules:
-     - path_regex: secrets/.*\.json$
-       key_groups:
-         - age:
-             - *acrux
-             - *newhost
-   ```
-2. Re-encrypt the secret so both hosts can decrypt:
+1. On the new host, register its recipient:
    ```bash
-   nix run .#sops-edit -- secrets/sing-box-outbounds.json
+   git add -A
+   nix run .#sops-init-recipient   # appends anchor + creation-rule alias
    ```
-3. Import `self.nixosModules.sops` and `self.nixosModules.singBox` in the
-   new host's `configuration.nix`.
+2. Commit, push, and pull on every machine so all see the updated
+   `.sops.yaml`.
+3. From any host that can already decrypt (e.g. acrux), sync existing
+   secrets to the new recipient set:
+   ```bash
+   nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json
+   ```
+4. Commit the rotated secret and import `self.nixosModules.sops` and
+   `self.nixosModules.singBox` in the new host's `configuration.nix`.
+
+Note: `sops rotate -i` would NOT work for step 3 — it re-uses a file's
+existing recipients and ignores `.sops.yaml`. `updatekeys` is what applies
+current creation rules.
 
 ### Using with other secrets
 

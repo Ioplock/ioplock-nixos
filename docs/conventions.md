@@ -186,6 +186,9 @@ This flake tracks `nixos-unstable`. Before adding or changing packages:
   filesystem adjustments.
 - **Do not** duplicate settings across hosts — extract into a feature module.
 - **Do not** commit secrets. Use `sops-nix`, `agenix`, or external env files.
+  (This repo commits sops-*encrypted* files under `secrets/` only — see
+  `docs/secrets-sing-box-setup.md` and
+  `docs/sops-sing-box-implementation.md`.)
 - **Do not** run `nixos-rebuild switch` or `nixos-rebuild boot`. See below.
 
 ---

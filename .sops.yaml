@@ -1,8 +1,9 @@
 keys:
   # One anchor per host. Register a new host from the host itself:
   #   nix run .#sops-init-recipient
-  # then re-encrypt all secrets so every listed host can decrypt:
-  #   nix run .#sops-edit -- -e -i secrets/sing-box-outbounds.json
+  # then sync existing secrets so every listed host can decrypt
+  # (run from any host that can already decrypt them):
+  #   nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json
   - &acrux age1vjjve4xm7a8gc2es5yelngpn8yjskfptd7ahyjr4e3k7p0kawylsphwazy
   - &mimosa age1fnkd9ujtym3l9acrhupdtaz4sluf3pkq59mqymxtnskkaqdf3dnq77kjjt
 creation_rules:

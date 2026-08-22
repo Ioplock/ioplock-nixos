@@ -11,10 +11,14 @@ this guide.
 
 sops-nix runs an activation script on `nixos-rebuild switch` that decrypts
 `secrets/sing-box-outbounds.json` using the age key derived from the host's
-SSH ed25519 key. The shipped `secrets/sing-box-outbounds.json` is a bootstrap
-placeholder encrypted with a **throwaway** age key the host cannot decrypt.
-If you switch before re-encrypting it with the host's real age recipient,
-activation fails.
+SSH ed25519 key. Activation fails if the encrypted file does not list this
+host's recipient yet:
+
+- **Fresh repo**: the shipped secret is a bootstrap placeholder encrypted
+  with a throwaway age key no host can decrypt (step 3a fixes it).
+- **Initialized repo**: existing secrets are encrypted for previously
+  registered hosts only; the new host must be registered and the secrets
+  synced to include its recipient (steps 2 and 3b).
 
 So the rule is: **prepare the secret before the first switch**, not after.
 
@@ -60,7 +64,9 @@ rg 'self\.nixosModules\.(sops|singBox)' modules/hosts/<host>/configuration.nix
 Both names must appear. If they do not, add the imports as part of the host
 configuration before preparing the secret.
 
-### 2. Derive the host's age recipient and patch `.sops.yaml`
+### 2. Derive the host's age recipient and register it in `.sops.yaml`
+
+From the new host itself:
 
 ```bash
 git add -A
@@ -68,9 +74,16 @@ nix run .#sops-init-recipient
 ```
 
 This reads `/etc/ssh/ssh_host_ed25519_key.pub`, converts it to an `age1...`
-recipient via `ssh-to-age`, and replaces the `age1PLACEHOLDER_...` token in
-`.sops.yaml` with the real recipient. It refuses to run if the placeholder is
-already gone (idempotent guard).
+recipient via `ssh-to-age`, and registers it in `.sops.yaml`. Behaviour
+depends on repo state:
+
+- **Fresh repo** (`.sops.yaml` still contains the
+  `age1PLACEHOLDER_...` token): the placeholder is replaced with this
+  host's recipient.
+- **Host already registered**: no-op.
+- **Initialized repo, new host**: appends a `- &<hostname> <recipient>`
+  anchor under `keys:` and adds the alias to every creation rule's age list,
+  then prints the sync command for step 3b.
 
 The `age1...` value is a **public** key — it is safe to commit. Only the
 private half (the SSH host key on disk) can decrypt, and that never leaves
@@ -78,31 +91,49 @@ private half (the SSH host key on disk) can decrypt, and that never leaves
 
 Verify:
 ```bash
-grep age1 .sops.yaml   # should show your real recipient, not PLACEHOLDER
+grep age1 .sops.yaml   # should list every host recipient, no PLACEHOLDER
 ```
 
-### 3. Re-encrypt the secret against the real recipient
+### 3. Sync the secret to all recipients
 
-The placeholder file was encrypted with a throwaway key. Replace it with a
-fresh copy of `secrets/sing-box-outbounds.json.example`, encrypted to your
-real recipient:
+Pick the case that matches your repo state.
+
+#### 3a. Fresh repo — replace the throwaway bootstrap secret
+
+The shipped `secrets/sing-box-outbounds.json` was encrypted with a one-shot
+key nobody can decrypt. Reset it to the tracked example template, freshly
+encrypted for the real recipient:
 
 ```bash
 nix run .#sops-edit -- --reset secrets/sing-box-outbounds.json
 ```
 
-This:
-- copies `secrets/sing-box-outbounds.json.example` over the placeholder,
-- encrypts it in place with `sops -e -i` using the age key derived from the
-  host SSH key (sudo will prompt for your password here),
-- prints instructions for the next step.
+This copies `secrets/sing-box-outbounds.json.example` over the placeholder
+and encrypts in place with `sops -e -i`. The file still contains the example
+placeholder values (`REPLACE-WITH-VLESS-HOST`, `REPLACE-WITH-VLESS-UUID`,
+etc.) until you edit them in step 4.
 
-After this step the file is encrypted to the host's real recipient but still
-contains the example placeholder values (`REPLACE-WITH-VLESS-HOST`,
-`REPLACE-WITH-VLESS-UUID`, etc.). sing-box would start but fail to connect —
-that's expected until you fill in real values.
+#### 3b. Initialized repo — add recipients to existing secrets
+
+Re-encryption must happen somewhere that can already decrypt the file, so
+run this **from any registered host** (e.g. acrux) — not from the new one —
+after committing and pulling the updated `.sops.yaml` everywhere:
+
+```bash
+nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json
+```
+
+Two sops gotchas make this the only correct command: plain `-e -i` refuses
+already-encrypted files, and `rotate -i` re-uses the file's old recipients
+without consulting `.sops.yaml`. Only `updatekeys` applies current creation
+rules.
+
+After this step the secret keeps its real values but every listed host can
+decrypt it.
 
 ### 4. Edit the secret with real outbound values
+
+(Fresh-repo path only; skip after a successful 3b.)
 
 ```bash
 nix run .#sops-edit -- secrets/sing-box-outbounds.json
@@ -270,9 +301,15 @@ Harmless. It just means you have unstaged changes. Stage them with
 
 ### Activation fails: `sops-decrypt: ... no matching key`
 
-The encrypted file's recipient does not match any key the host can produce.
-Re-run step 2 (`sops-init-recipient`) to confirm `.sops.yaml` has the host's
-real `age1...`, then re-run step 3 (`--reset`) to re-encrypt.
+The encrypted file's recipients do not match any key the host can produce.
+Confirm the host is registered in `.sops.yaml` (step 2) and that the secret
+has been synced since (step 3b): from a host that can already decrypt, run
+
+```bash
+nix run .#sops-edit -- updatekeys secrets/sing-box-outbounds.json
+```
+
+commit/pull everywhere, then switch again.
 
 ### sing-box fails to start or the proxy on port 1080 does not respond
 
