@@ -20,6 +20,16 @@
         key = "";
         restartUnits = [ "sing-box.service" ];
       };
+
+      # Sunshine web-UI login (flat {username,password,salt} JSON). Owned by
+      # the primary user because the Sunshine service is a systemd user unit.
+      # No restartUnits here: Sunshine runs as a user unit, which the
+      # system-level sops activation cannot restart directly.
+      sops.secrets.sunshine-credentials = {
+        key = "";
+        sopsFile = ./../../secrets/sunshine-credentials.json;
+        owner = config.myUser.name;
+      };
     };
 
   perSystem =

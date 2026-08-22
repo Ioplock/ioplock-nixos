@@ -21,6 +21,7 @@
         self.nixosModules.sops
         self.nixosModules.ssh
         self.nixosModules.steam
+        self.nixosModules.sunshine
         self.nixosModules.user
         self.nixosModules.vscode
         self.nixosModules.yazi
