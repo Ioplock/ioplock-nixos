@@ -47,12 +47,14 @@
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
 
-      # Headless-ready GPU: force the connector on with a synthetic EDID so
-      # niri keeps rendering with no display attached. Remove once a real
-      # monitor with different native resolution is meant to be driven.
+      # Headless-ready GPU: force-enable HDMI-A-1 and inject a 1920x1080@60
+      # mode directly (kernelParams apply at boot — reboot to change). A
+      # drm.edid_firmware reference is deliberately NOT used: nixpkgs kernels
+      # do not ship the edid/*.bin blobs, and the failed load falls back to
+      # the kernel's built-in stub EDID offering only 640x480. With a real
+      # monitor attached its native EDID still takes precedence.
       boot.kernelParams = [
-        "video=HDMI-A-1:e"
-        "drm.edid_firmware=HDMI-A-1:edid/1920x1080.bin"
+        "video=HDMI-A-1:1920x1080@60e"
       ];
 
       # ==================================================
