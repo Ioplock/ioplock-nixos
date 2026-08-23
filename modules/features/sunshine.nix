@@ -4,32 +4,33 @@
     { config, pkgs, lib, ... }:
     let
       # Same rendering the upstream module performs for settings; needed here
-      # because the singleton guard below has to rebuild ExecStart with the
-      # config-file argument included.
+      # because the singleton launcher below has to be invoked with the
+      # config-file argument by the unit.
       confFile = (pkgs.formats.keyValue { }).generate "sunshine.conf"
         config.services.sunshine.settings;
 
-      # Singleton guard around the setcap wrapper: a second invocation
-      # (manual terminal launch, rofi entry, stray autostart) exits instantly
-      # instead of racing the systemd user service for ports. flock execs the
-      # CAP_SYS_ADMIN wrapper directly, so file capabilities survive the chain.
-      guarded = pkgs.writeShellScript "sunshine-singleton" ''
-        ${pkgs.util-linux}/bin/flock -n /tmp/sunshine.lock true || \
-          { echo "sunshine: already running (systemd user service)" >&2; exit 1; }
-        exec ${pkgs.util-linux}/bin/flock /tmp/sunshine.lock \
-          ${config.security.wrapperDir}/sunshine ${confFile}
-      '';
+      # Singleton launcher used by EVERYTHING (unit and manual runs): a second
+      # invocation exits instantly instead of racing for ports or corrupting
+      # state. The lock holder execs the CAP_SYS_ADMIN ELF wrapper so KMS
+      # capture keeps working — a shell script cannot carry file capabilities,
+      # hence the separate sunshine-real wrapper below.
+      guarded =
+        (pkgs.writeShellScriptBin "sunshine" ''
+          ${pkgs.util-linux}/bin/flock -n /tmp/sunshine.lock true || \
+            { echo "sunshine: already running (systemd user service)" >&2; exit 1; }
+          exec ${pkgs.util-linux}/bin/flock /tmp/sunshine.lock \
+            ${config.security.wrapperDir}/sunshine-real "$@"
+        '').overrideAttrs (_: { meta.mainProgram = "sunshine"; });
     in
     {
-      # Upstream module: systemd *user* service bound to graphical-session.target,
-      # which uwsm activates for the greetd autologin niri session.
       services.sunshine = {
         enable = true;
+        package = guarded;
         autoStart = true;
-        # KMS capture headroom via setcap on the real ELF binary; Wayland
-        # capture is used inside the session either way. Headless works thanks
-        # to the forced-EDID kernel params.
-        capSysAdmin = true;
+        # Upstream's capSysAdmin would wrap getExe(package) — our script — and
+        # setcap cannot apply to scripts. The equivalent capability lives on
+        # sunshine-real below instead.
+        capSysAdmin = false;
         openFirewall = true;
 
         settings = {
@@ -45,9 +46,21 @@
         };
       };
 
-      # Replace the plain ExecStart with the guarded one. mkForce is safe: the
-      # upstream argument list is fully reconstructed above (wrapper + config).
+      # The capability-carrying entry point (real ELF binary).
+      security.wrappers.sunshine-real = {
+        source = "${pkgs.sunshine}/bin/sunshine";
+        owner = "root";
+        group = "root";
+        capabilities = "cap_sys_admin+p";
+      };
+
+      # Upstream points udev at cfg.package (now the script, which ships no
+      # rules); keep the real package's gamepad/input rules loaded.
+      services.udev.packages = [ pkgs.sunshine ];
+
+      # Replace the upstream argument list wholesale: same rendered config,
+      # but through the singleton launcher.
       systemd.user.services.sunshine.serviceConfig.ExecStart =
-        lib.mkForce "${guarded}";
+        lib.mkForce "${guarded}/bin/sunshine ${confFile}";
     };
 }
