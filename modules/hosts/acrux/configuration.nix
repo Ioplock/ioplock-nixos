@@ -99,6 +99,11 @@
       # Enable touchpad support (enabled default in most desktopManager).
       services.libinput.enable = true;
 
+      # mDNS browsing so Moonlight discovers Sunshine hosts advertised on the
+      # LAN (mimosa advertises via avahi; a local responder is still required).
+      services.avahi.enable = true;
+      networking.firewall.allowedUDPPorts = [ 5353 ];
+
       # ==================================================
       # Video
       # ==================================================

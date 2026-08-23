@@ -1,47 +1,35 @@
 { self, inputs, ... }:
 {
-  perSystem =
-    { pkgs, ... }:
-    {
-      # Sunshine wrapped with a singleton lock: a second invocation (manual
-      # terminal launch, rofi entry, stray autostart) exits immediately
-      # instead of racing the systemd user service for ports.
-      #
-      # The shim is a shell script, so this package must NOT be given file
-      # capabilities (setcap cannot carry over interpreters) — hence
-      # capSysAdmin = false below. Capture runs through the Wayland protocol
-      # inside the autologin session, which works headless thanks to the
-      # forced-EDID kernel params.
-      packages.mySunshine =
-        let
-          real = "${pkgs.sunshine}/bin/sunshine";
-        in
-        pkgs.symlinkJoin {
-          name = "sunshine-${pkgs.sunshine.version}-singleton";
-          paths = [ pkgs.sunshine ];
-          meta.mainProgram = "sunshine";
-          postBuild = ''
-            rm $out/bin/sunshine
-            cat > $out/bin/sunshine <<'EOF'
-            #!/bin/sh
-            ${pkgs.util-linux}/bin/flock -n /tmp/sunshine.lock true || \
-              { echo "sunshine: already running (systemd user service)" >&2; exit 1; }
-            exec ${pkgs.util-linux}/bin/flock /tmp/sunshine.lock ${real} "$@"
-            EOF
-            chmod +x $out/bin/sunshine
-          '';
-        };
-    };
-
   flake.nixosModules.sunshine =
-    { config, pkgs, ... }:
+    { config, pkgs, lib, ... }:
+    let
+      # Same rendering the upstream module performs for settings; needed here
+      # because the singleton guard below has to rebuild ExecStart with the
+      # config-file argument included.
+      confFile = (pkgs.formats.keyValue { }).generate "sunshine.conf"
+        config.services.sunshine.settings;
+
+      # Singleton guard around the setcap wrapper: a second invocation
+      # (manual terminal launch, rofi entry, stray autostart) exits instantly
+      # instead of racing the systemd user service for ports. flock execs the
+      # CAP_SYS_ADMIN wrapper directly, so file capabilities survive the chain.
+      guarded = pkgs.writeShellScript "sunshine-singleton" ''
+        ${pkgs.util-linux}/bin/flock -n /tmp/sunshine.lock true || \
+          { echo "sunshine: already running (systemd user service)" >&2; exit 1; }
+        exec ${pkgs.util-linux}/bin/flock /tmp/sunshine.lock \
+          ${config.security.wrapperDir}/sunshine ${confFile}
+      '';
+    in
     {
       # Upstream module: systemd *user* service bound to graphical-session.target,
       # which uwsm activates for the greetd autologin niri session.
       services.sunshine = {
         enable = true;
-        package = self.packages.${pkgs.stdenv.hostPlatform.system}.mySunshine;
         autoStart = true;
+        # KMS capture headroom via setcap on the real ELF binary; Wayland
+        # capture is used inside the session either way. Headless works thanks
+        # to the forced-EDID kernel params.
+        capSysAdmin = true;
         openFirewall = true;
 
         settings = {
@@ -56,5 +44,10 @@
           credentials_file = config.sops.secrets.sunshine-credentials.path;
         };
       };
+
+      # Replace the plain ExecStart with the guarded one. mkForce is safe: the
+      # upstream argument list is fully reconstructed above (wrapper + config).
+      systemd.user.services.sunshine.serviceConfig.ExecStart =
+        lib.mkForce "${guarded}";
     };
 }
