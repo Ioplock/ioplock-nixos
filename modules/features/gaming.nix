@@ -29,6 +29,18 @@
 
           prefer-no-csd = true;
 
+          # SteamVR's utility windows (settings, status, monitor) are Qt dialogs
+          # that otherwise tile into full-screen columns under niri.
+          window-rules = [
+            {
+              matches = [
+                { app-id = "(?i)^(vrstartup|vrmonitor|vrserver|vrcompositor|steamvr).*"; }
+                { title = "(?i)steamvr.*"; }
+              ];
+              open-floating = true;
+            }
+          ];
+
           hotkey-overlay.skip-at-startup = _: { };
 
           xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
