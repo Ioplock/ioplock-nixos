@@ -16,9 +16,10 @@
         ];
       };
 
-      programs.gamescope = {
-        enable = true;
-        capSysNice = true;
-      };
+      # Nested use only; capSysNice deliberately NOT set — the file
+      # capability cannot be inherited inside Steam's pressure-vessel
+      # sandbox ("failed to inherit capabilities") and kills gamescope
+      # at launch when prefixed via %command%.
+      programs.gamescope.enable = true;
     };
 }
