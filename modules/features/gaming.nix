@@ -15,6 +15,7 @@
         imports = [ self.wrapperModules.quickshell ];
         env.QS_MINIMAL = "1";
         extraPackages = [
+          pkgs.coreutils
           self'.packages.myWallpaperList
         ];
       };

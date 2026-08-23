@@ -72,6 +72,7 @@
         imports = [ self.wrapperModules.quickshell ];
         configPath = ./.;
         extraPackages = [
+          pkgs.coreutils
           self'.packages.myQuickshellStatus
           self'.packages.myWallpaperList
           self'.packages.myToggleBluetooth

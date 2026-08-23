@@ -25,6 +25,24 @@ property int barHeight: 34
     // the persisted selection is lost on every fresh start).
     property bool _saving: false
 
+    // Two fresh-host failure modes, both fixed here:
+    // 1. FileView cannot create missing parent directories — without
+    //    ~/.config/quickshell/ every writeAdapter() fails silently.
+    // 2. `loaded` only fires when the file already exists, so _loaded stays
+    //    false forever and save() no-ops even after the directory appears.
+    //    Once the directory is ensured, seed an empty store so loading can
+    //    begin and saves are unlocked.
+    property Process _ensureConfigDir: Process {
+        command: [ "mkdir", "-p", Quickshell.env("HOME") + "/.config/quickshell" ]
+        running: true
+        onExited: {
+            if (!settings._loaded) {
+                settings._loaded = true
+                settings.save()
+            }
+        }
+    }
+
     property FileView fileView: FileView {
         path: settings.settingsPath
         watchChanges: true
