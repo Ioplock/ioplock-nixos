@@ -19,6 +19,7 @@
         pkgs.symlinkJoin {
           name = "sunshine-${pkgs.sunshine.version}-singleton";
           paths = [ pkgs.sunshine ];
+          meta.mainProgram = "sunshine";
           postBuild = ''
             rm $out/bin/sunshine
             cat > $out/bin/sunshine <<'EOF'
