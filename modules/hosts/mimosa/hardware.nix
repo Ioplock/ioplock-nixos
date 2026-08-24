@@ -41,8 +41,13 @@
         ];
       };
 
-      fileSystems."/srv" = {
+      fileSystems."/mnt/disk0" = {
         device = "/dev/disk/by-uuid/b0aa79da-5479-4647-beca-6ec5c7ed46e0";
+        fsType = "ext4";
+      };
+
+      fileSystems."/mnt/disk1" = {
+        device = "/dev/disk/by-uuid/55337869-308b-49cc-90ad-e2acb6186664";
         fsType = "ext4";
       };
 
