@@ -46,10 +46,21 @@
           # nixpkgs.config.allowUnfree = true. ML (dlib) is disabled: building
           # it OOM-crashed acrux, and anomaly detection is not needed for
           # temperature/load history.
-          package = pkgs.netdata.override {
+          #
+          # overrideAttrs: nixpkgs rewrites the vendored GOPROXY only in
+          # NetdataGoTools.cmake, but the snmp-trap-profile-pack target in the
+          # root CMakeLists.txt hardcodes proxy.golang.org — unreachable from
+          # the build sandbox. Point it at the same local Go vendor dir.
+          package = (pkgs.netdata.override {
             withCloudUi = true;
             withML = false;
-          };
+          }).overrideAttrs (finalAttrs: prevAttrs: {
+            postPatch = (prevAttrs.postPatch or "") + ''
+              substituteInPlace CMakeLists.txt \
+                --replace-fail 'GOPROXY=https://proxy.golang.org' \
+                  'GOPROXY=file://${finalAttrs.passthru.netdata-go-modules}'
+            '';
+          });
           # The NixOS module leaves the listen address at upstream default;
           # make LAN exposure explicit instead of relying on it.
           config."web" = {
