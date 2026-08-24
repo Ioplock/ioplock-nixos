@@ -13,6 +13,7 @@
         self.nixosModules.docker
         self.nixosModules.firefox
         self.nixosModules.git
+        self.nixosModules.monitoring
         self.nixosModules.nh
         self.nixosModules.niri
         self.nixosModules.opencode
@@ -113,6 +114,15 @@
       # ==================================================
       # Key-only login.
       services.openssh.settings.PasswordAuthentication = false;
+
+      # ==================================================
+      # Monitoring
+      # ==================================================
+      # Netdata UI reachable from the LAN on :19999 (smartd included).
+      myMonitoring = {
+        enable = true;
+        openFirewall = true;
+      };
     };
 
 }
