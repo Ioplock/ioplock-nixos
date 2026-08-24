@@ -97,7 +97,8 @@
       programs.nh.flake = "/home/mimosa/nixconf";
 
       # ==================================================
-      # Desktop (gaming niri: wallpaper only, no status bar)
+      # Desktop (gaming niri: compact status bar — clock, layout, volume,
+      # workspace, focused window, settings; no wifi/bluetooth/battery)
       # ==================================================
       myNiri.package = self.packages.${pkgs.stdenv.hostPlatform.system}.myNiriGaming;
 

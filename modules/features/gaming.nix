@@ -8,14 +8,19 @@
       ...
     }:
     {
-      # Quickshell build for the gaming niri session: wallpaper background and
-      # picker only. The QML side hides the status bar when QS_MINIMAL is set.
+      # Quickshell build for the gaming niri session: wallpaper background,
+      # picker and a compact status bar (settings, workspace, focused window,
+      # clock, keyboard layout, volume). The QML side hides wifi, bluetooth
+      # and battery when QS_COMPACT is set.
       packages.myQuickshellGaming = inputs.wrapper-modules.lib.wrapPackage {
         inherit pkgs;
         imports = [ self.wrapperModules.quickshell ];
-        env.QS_MINIMAL = "1";
+        env.QS_COMPACT = "1";
         extraPackages = [
           pkgs.coreutils
+          pkgs.niri
+          pkgs.wireplumber
+          self'.packages.myQuickshellStatus
           self'.packages.myWallpaperList
         ];
       };

@@ -9,9 +9,12 @@ ShellRoot {
     property var status: ["?", "Desktop", "unknown", "unknown", "disconnected", "off", "AC"]
     property date dateTime: new Date()
 
-    // QS_MINIMAL=1 (gaming niri build) hides the status bar, leaving only
-    // the wallpaper background and picker.
+    // QS_MINIMAL=1 hides the status bar entirely (wallpaper and picker only).
+    // QS_COMPACT=1 (gaming niri build) keeps only gaming-relevant widgets:
+    // settings, workspace, focused window, clock, keyboard layout and
+    // volume. Wifi, bluetooth and battery are hidden.
     readonly property bool minimal: Quickshell.env("QS_MINIMAL") === "1"
+    readonly property bool compact: Quickshell.env("QS_COMPACT") === "1"
 
     Settings {
         id: appSettings
@@ -302,6 +305,7 @@ ShellRoot {
                         }
 
                         BarButton {
+                            visible: !root.compact
                             appSettings: appSettingsRef
                             icon: "\uF1EB"
                             text: root.status[4]
@@ -312,6 +316,7 @@ ShellRoot {
                         }
 
                         BarButton {
+                            visible: !root.compact
                             appSettings: appSettingsRef
                             icon: "\uF293"
                             text: root.btText()
@@ -321,6 +326,7 @@ ShellRoot {
                         }
 
                         BarButton {
+                            visible: !root.compact
                             appSettings: appSettingsRef
                             icon: root.batteryGlyph()
                             text: root.batteryText()
