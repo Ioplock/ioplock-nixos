@@ -104,6 +104,12 @@
 
         xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
 
+        # Cursor theme provided system-wide by vanilla-dmz (see cursor feature).
+        cursor = {
+          xcursor-theme = "DMZ-Black";
+          xcursor-size = 24;
+        };
+
         input = {
           keyboard = {
             xkb = {

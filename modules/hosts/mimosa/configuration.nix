@@ -9,6 +9,7 @@
         self.nixosModules.mimosaHardware
         self.nixosModules.audio
         self.nixosModules.cliphist
+        self.nixosModules.cursor
         self.nixosModules.docker
         self.nixosModules.firefox
         self.nixosModules.git
