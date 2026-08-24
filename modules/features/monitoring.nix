@@ -54,6 +54,10 @@
           package = (pkgs.netdata.override {
             withCloudUi = true;
             withML = false;
+            # ndsudo is netdata's SUID-root exec helper (whitelisted commands
+            # only). Needed so the built-in smartctl collector can read drive
+            # SMART data; fed smartctl via extraNdsudoPackages below.
+            withNdsudo = true;
           }).overrideAttrs (finalAttrs: prevAttrs: {
             postPatch = (prevAttrs.postPatch or "") + ''
               substituteInPlace CMakeLists.txt \
@@ -72,6 +76,11 @@
         # SMART polling for every auto-detected drive: health status and
         # temperature, warnings logged to the journal.
         services.smartd.enable = true;
+
+        # Put smartctl on ndsudo's PATH: activates netdata's smartctl
+        # collector so drive temps/SMART attributes show up as dashboard
+        # charts (smartd alone only logs to the journal).
+        services.netdata.extraNdsudoPackages = [ pkgs.smartmontools ];
 
         networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
       };
