@@ -40,6 +40,16 @@
         # Metrics persist on disk (dbengine), so history survives restarts.
         services.netdata = {
           enable = true;
+          # nixpkgs builds netdata without the dashboard UI by default
+          # (withCloudUi, ncul1-licensed web assets), leaving the agent to
+          # serve 404s on /. Opt into it — hosts using this feature must set
+          # nixpkgs.config.allowUnfree = true. ML (dlib) is disabled: building
+          # it OOM-crashed acrux, and anomaly detection is not needed for
+          # temperature/load history.
+          package = pkgs.netdata.override {
+            withCloudUi = true;
+            withML = false;
+          };
           # The NixOS module leaves the listen address at upstream default;
           # make LAN exposure explicit instead of relying on it.
           config."web" = {
