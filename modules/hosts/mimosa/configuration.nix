@@ -12,6 +12,7 @@
         self.nixosModules.cursor
         self.nixosModules.docker
         self.nixosModules.firefox
+        self.nixosModules.fonts
         self.nixosModules.git
         self.nixosModules.monitoring
         self.nixosModules.nh

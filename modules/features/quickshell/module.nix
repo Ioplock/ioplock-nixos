@@ -44,6 +44,7 @@
           jq
           networkmanager
           niri
+          systemd
           wireplumber
         ];
         text = builtins.readFile ./status.sh;

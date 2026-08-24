@@ -37,8 +37,12 @@ wifi="$(
     awk -F: '$1 == "wifi" && $2 == "connected" { print $3; found = 1; exit } END { if (!found) print "disconnected" }'
 )"
 
-if bluetoothctl show 2>/dev/null | grep -q $'^\tPowered: yes$'; then
-  bluetooth_count="$(bluetoothctl devices Connected 2>/dev/null | wc -l)"
+# Guard on the daemon: bluetoothctl silently waits forever when no bluetooth
+# daemon is running (e.g. headless gaming host without hardware.bluetooth),
+# which would freeze the whole status line.
+if systemctl is-active --quiet bluetooth &&
+  timeout 2 bluetoothctl show 2>/dev/null | grep -q $'^\tPowered: yes$'; then
+  bluetooth_count="$(timeout 2 bluetoothctl devices Connected 2>/dev/null | wc -l)"
   if [ "$bluetooth_count" -gt 0 ]; then
     bluetooth="${bluetooth_count} connected"
   else
