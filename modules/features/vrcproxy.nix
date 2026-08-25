@@ -40,8 +40,9 @@
 
           appid="''${VRC_APPID:-438100}"
           port="''${VRC_PROXY_PORT:-8080}"
+          tport="''${VRC_TPROXY_PORT:-8085}"
           web_port="''${VRC_WEB_PORT:-8081}"
-          conf="$HOME/.mitmproxy"
+          conf="''${VRC_CONFDIR:-$HOME/.mitmproxy}"
           ca_cert="$conf/mitmproxy-ca-cert.cer"
           allow='.*\.vrchat\.(cloud|com)'
           reg_key='HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
@@ -50,19 +51,28 @@
             cat <<EOF
           vrc-proxy — inspect VRChat HTTPS traffic (read-only MITM)
 
-            serve     start mitmweb scoped to *.vrchat.cloud / *.vrchat.com
+            serve     start mitmweb (explicit proxy) scoped to vrchat domains
+            serve-t   start mitmweb in transparent mode for nftables redirect
             trust     import the mitmproxy CA into VRChat's Proton prefix
             on        route VRChat through the local proxy (prefix registry)
             off       remove the prefix proxy setting
             status    show the prefix's current proxy registry values
 
-          Env: VRC_APPID=''${appid} VRC_PROXY_PORT=''${port} VRC_WEB_PORT=''${web_port}
+          Env: VRC_APPID=''${appid} VRC_PROXY_PORT=''${port}
+               VRC_TPROXY_PORT=''${tport} VRC_WEB_PORT=''${web_port}
+               VRC_CONFDIR=<path>  CA/config dir (default ~/.mitmproxy)
                VRC_PROXY_DUMP=<path>  record intercepted flows to a file
 
           Order of operations:
             1. vrc-proxy serve        (keep running)
             2. vrc-proxy trust        (once per prefix recreation)
             3. vrc-proxy on           (launch VRChat via Steam)
+
+          If VRChat ignores the registry proxy (no flows), use the
+          transparent route instead:
+            1. vrc-proxy serve-t      as the vrcproxy user, port ''${tport}
+            2. sudo nft redirect of tcp/443 to ''${tport}   (see repo notes)
+            3. launch VRChat - no 'on' needed, ignore registry entirely
 
           Only VRChat domains are decrypted; everything else passes through
           untouched, including EasyAnti-Cheat endpoints. Photon UDP traffic
@@ -101,9 +111,16 @@
 
           case "$cmd" in
             usage) usage ;;
-            serve)
+            serve|serve-t)
               ensure_ca
-              echo "proxy : http://127.0.0.1:$port  (intercepting: $allow)"
+              if [ "$cmd" = serve ]; then
+                mode_args=(--listen-host 127.0.0.1 --listen-port "$port")
+                echo "proxy : http://127.0.0.1:$port  (intercepting: $allow)"
+              else
+                mode_args=(--mode transparent --listen-host 0.0.0.0 --listen-port "$tport")
+                echo "tproxy : 0.0.0.0:$tport (transparent, intercepting: $allow)"
+                echo "        redirect tcp/443 -> $tport with nftables; exclude uid $(id -u) and LAN"
+              fi
               echo "ui    : http://127.0.0.1:$web_port"
               echo "CA    : $ca_cert"
               dump_args=()
@@ -114,7 +131,7 @@
               fi
               exec mitmweb \
                 --set "confdir=$conf" \
-                --listen-host 127.0.0.1 --listen-port "$port" \
+                "''${mode_args[@]}" \
                 --web-host 127.0.0.1 --web-port "$web_port" \
                 --set web_open_browser=false \
                 --set "allow_hosts=$allow" \
