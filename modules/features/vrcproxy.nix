@@ -84,11 +84,13 @@
             fi
           }
 
-          # protontricks call with fallback to the Steam runtime if the
-          # lighter --no-runtime mode fails.
+          # Run a command inside the VRChat prefix. protontricks -c executes
+          # on the host shell with the prefix's Wine environment set, and
+          # every protontricks-specific flag must come BEFORE the appid.
           pt() {
-            if ! protontricks --no-runtime "$@" 2>/dev/null; then
-              protontricks "$@"
+            cmdline="$1"
+            if ! protontricks --no-runtime -c "$cmdline" "$appid" 2>/dev/null; then
+              protontricks -c "$cmdline" "$appid"
             fi
           }
 
@@ -122,24 +124,21 @@
               ensure_ca
               wp="$(win_path "$ca_cert")"
               echo "importing $wp into Root store of app $appid ..."
-              pt "$appid" -c "certutil -addstore -f Root \"$wp\""
+              pt "wine certutil -addstore -f Root '$wp'"
               echo "done. If VRChat was installed before importing, restart it."
               ;;
             on)
-              pt "$appid" -c \
-                "reg add \"$reg_key\" /v ProxyServer /t REG_SZ /d \"127.0.0.1:$port\" /f"
-              pt "$appid" -c \
-                "reg add \"$reg_key\" /v ProxyEnable /t REG_DWORD /d 1 /f"
+              pt "wine reg add '$reg_key' /v ProxyServer /t REG_SZ /d '127.0.0.1:$port' /f"
+              pt "wine reg add '$reg_key' /v ProxyEnable /t REG_DWORD /d 1 /f"
               echo "VRChat prefix now proxies via 127.0.0.1:$port"
               ;;
             off)
-              pt "$appid" -c \
-                "reg add \"$reg_key\" /v ProxyEnable /t REG_DWORD /d 0 /f"
+              pt "wine reg add '$reg_key' /v ProxyEnable /t REG_DWORD /d 0 /f"
               echo "VRChat prefix proxy disabled"
               ;;
             status)
-              pt "$appid" -c "reg query \"$reg_key\" /v ProxyServer"
-              pt "$appid" -c "reg query \"$reg_key\" /v ProxyEnable"
+              pt "wine reg query '$reg_key' /v ProxyServer"
+              pt "wine reg query '$reg_key' /v ProxyEnable"
               ;;
             *)
               usage
