@@ -1,5 +1,7 @@
 # Stops all mic senders on this PC (run on the machine you are done with).
-# Note: closing Moonlight does NOT stop the sender — always stop it here.
+# Note: closing Moonlight does NOT stop the sender - always stop it here.
+#
+# NOTE: keep this file pure ASCII (see mic-forward-send.ps1).
 $procs = Get-Process -Name "gst-launch-1.0" -ErrorAction SilentlyContinue
 if ($procs) {
   $procs | Stop-Process -Force

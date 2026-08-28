@@ -1,8 +1,12 @@
 # Sends this Windows PC's default mic to mimosa's virtual mic as RTP/Opus.
 # Run on the PC you are streaming from. Any sender already running on this
-# PC (including one orphaned by a closed console window — closing Moonlight
+# PC (including one orphaned by a closed console window - closing Moonlight
 # does NOT stop it) is killed first: two simultaneous senders corrupt the
 # audio on mimosa.
+#
+# NOTE: keep this file pure ASCII - Windows PowerShell 5.1 reads BOM-less
+# scripts in the system codepage, and any non-ASCII character (even in a
+# comment) can corrupt parsing.
 $HostAddr = "192.168.1.92"
 $SendPort = 5004
 
@@ -13,7 +17,7 @@ if ($existing) {
   Write-Host "Killed $($existing.Count) leftover sender(s) on this PC."
 }
 
-Write-Host "Streaming mic to ${HostAddr}:${SendPort} — keep this window open."
+Write-Host "Streaming mic to ${HostAddr}:${SendPort} - keep this window open."
 Write-Host "Stop with Ctrl+C, by closing this window, or via mic-forward-stop.ps1."
 $ErrorActionPreference = "Stop"
 & gst-launch-1.0.exe -q `
