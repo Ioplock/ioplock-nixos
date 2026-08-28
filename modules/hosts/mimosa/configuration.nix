@@ -140,7 +140,10 @@ Ho4zRJEIXy8O
       # ==================================================
       # Expose a virtual mic that clients (acrux, Windows PCs) stream into
       # while a Sunshine session is live, so games hear you talk.
-      myMicForward.enableReceiver = true;
+      myMicForward = {
+        enableReceiver = true;
+        enableVbanReceiver = true; # VoiceMeeter/VBAN mic from Windows clients
+      };
 
       # ==================================================
       # Video

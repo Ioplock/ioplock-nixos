@@ -66,6 +66,17 @@
           default = "mic-loopback-cm";
           description = "Stable Pulse/PipeWire name of the snd-aloop capture source (the virtual mic).";
         };
+
+        enableVbanReceiver = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "Accept VoiceMeeter VBAN streams from Windows clients as a virtual mic.";
+        };
+        vbanPort = lib.mkOption {
+          type = lib.types.port;
+          default = 6980;
+          description = "UDP port for incoming VBAN streams (VoiceMeeter default).";
+        };
       };
 
       config = lib.mkMerge [
@@ -123,6 +134,40 @@
               ExecStart = "${lib.getExe (selfPkg "myMicForwardRecv")} ${toString cfg.receivePort} ${cfg.loopbackPlayback}";
             };
           };
+        })
+
+        (lib.mkIf cfg.enableVbanReceiver {
+          # Windows clients stream their mic with VoiceMeeter's VBAN protocol
+          # (plain PCM over UDP, no scripting on the Windows side). The
+          # PipeWire module is loaded permanently, but the source node only
+          # exists while a stream is actually arriving; its priority beats
+          # the snd-aloop virtual mic (10000), so the default source follows
+          # whichever client is live and reverts when it goes silent.
+          services.pipewire.extraConfig.pipewire."55-mic-vban" = {
+            "context.modules" = [
+              {
+                "name" = "libpipewire-module-vban-recv";
+                "args" = {
+                  "source.ip" = "0.0.0.0";
+                  "source.port" = cfg.vbanPort;
+                  "sess.latency.msec" = 20;
+                  "stream.rules" = [
+                    {
+                      "matches" = [ { "sess.name" = "~.*"; } ];
+                      "actions"."create-stream"."stream.props" = {
+                        "media.class" = "Audio/Source";
+                        "node.name" = "mic-vban";
+                        "node.description" = "Virtual Mic (VBAN)";
+                        "priority.session" = 10001;
+                      };
+                    }
+                  ];
+                };
+              }
+            ];
+          };
+
+          networking.firewall.allowedUDPPorts = [ cfg.vbanPort ];
         })
 
         (lib.mkIf cfg.enableSender {

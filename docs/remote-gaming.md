@@ -79,7 +79,16 @@ it into an `snd-aloop` virtual mic that games read as the default source.
 | Receiver | `myMicForward.enableReceiver` (mimosa) | `snd-aloop` + `mic-forward-recv` user unit (decodes UDP 5004 into the loopback playback side) |
 | Sender | `myMicForward.enableSender` (acrux) | `mic-forward-send` unit, **started manually** on the client in use |
 | Lifecycle | Sunshine `prep-cmd`/`undo-cmd` in `sunshine.nix` | start/stop `mic-forward-recv` only; senders are manual |
-| Windows clients | `windows-client/` | portable GStreamer + start/stop scripts (same RTP/Opus) |
+| Windows clients | `windows-client/` | VoiceMeeter + VBAN (recommended, no scripts) or portable GStreamer + start/stop scripts (same RTP/Opus) |
+
+Windows clients (recommended path): VoiceMeeter (free) streams the PC's mic
+via its **VBAN** protocol (`myMicForward.enableVbanReceiver` on mimosa).
+PipeWire's `libpipewire-module-vban-recv` (UDP 6980) creates a "Virtual Mic
+(VBAN)" source that only exists while the stream arrives; its
+`priority.session` (10001) beats the snd-aloop mic (10000), so the default
+input follows whichever client is live — VBAN from Windows, or the snd-aloop
+mic while acrux streams. No start/stop commands on either side. Setup steps
+and the GStreamer-script fallback are in `windows-client/README.md`.
 
 Flow:
 
