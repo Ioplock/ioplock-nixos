@@ -9,6 +9,15 @@ socket and decode as garbage).
 Transport is identical on every client: capture the default mic, encode Opus,
 stream RTP/UDP to `mimosa:5004`.
 
+**Lifecycle gotcha:** the sender is completely independent of Moonlight.
+Closing Moonlight or ending the stream session does **not** stop the sender —
+it keeps streaming silently in the background. If you then start a sender on
+another PC, two RTP streams hit mimosa's single receiver socket and the audio
+turns to garbage (this looks like "the mic stopped working" — it is actually
+a collision). Always stop the sender explicitly when you are done
+(`mic-forward-stop.ps1` on Windows, `Mod+M`/`systemctl --user stop
+mic-forward-send` on acrux), and run the send script on exactly one machine.
+
 ---
 
 ## Linux client (acrux)
@@ -79,6 +88,24 @@ pactl list sources short   # alternative listing
 
 Then start Moonlight, start the sender, and talk — the Virtual Mic meter on
 mimosa should move (watchable with `pavucontrol` on mimosa).
+
+## Troubleshooting
+
+1. **Exactly one sender must exist in total.** On each Windows PC check with
+   `Get-Process gst-launch-1.0`; kill strays with
+   `Stop-Process -Name gst-launch-1.0 -Force` (or just re-run the updated
+   send script, which cleans leftovers on that PC first).
+2. **Receiver sees the stream?** On mimosa:
+   `ssh mimosa@192.168.1.92 wpctl status` — while you talk there must be
+   **exactly one** `gst-launch-1.0` entry under *Streams* connected to
+   *Loopback PCM*, and `Virtual Mic` must be the default source (the `*`
+   under *Sources*). Zero stream entries → the sender is not sending; two →
+   collision (kill all senders, start one).
+3. **Windows blocks the mic?** Settings → Privacy & security → Microphone →
+   *Let desktop apps access your microphone* must be on.
+4. **Sender captures anything?** Local sanity check on Windows:
+   `gst-launch-1.0 -v autoaudiosrc ! level ! fakesink` — the printed RMS
+   values should move when you speak (Ctrl+C to stop).
 
 ## Caveats
 

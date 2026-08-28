@@ -100,7 +100,12 @@ systemctl --user start mic-forward-send     # stop: ... stop mic-forward-send
 ```
 
 Windows: run `windows-client/mic-forward-send.ps1` (stop via
-`mic-forward-stop.ps1` or Ctrl+C) — see `windows-client/README.md`.
+`mic-forward-stop.ps1` or Ctrl+C) — see `windows-client/README.md`. The
+Windows sender is independent of Moonlight: closing Moonlight does **not**
+stop it. A sender left running while another PC's sender starts produces two
+interleaved RTP streams — audio turns to garbage and looks like "the mic
+stopped working". The send script kills leftovers on its own PC first;
+always stop the sender on the machine you are leaving.
 
 Verification once both hosts are rebuilt:
 
