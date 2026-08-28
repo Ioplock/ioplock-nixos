@@ -14,6 +14,7 @@
         self.nixosModules.firefox
         self.nixosModules.fonts
         self.nixosModules.git
+        self.nixosModules.micForward
         self.nixosModules.monitoring
         self.nixosModules.nh
         self.nixosModules.niri
@@ -133,6 +134,13 @@ Ho4zRJEIXy8O
       # workspace, focused window, settings; no wifi/bluetooth/battery)
       # ==================================================
       myNiri.package = self.packages.${pkgs.stdenv.hostPlatform.system}.myNiriGaming;
+
+      # ==================================================
+      # Mic forwarding (Sunshine host)
+      # ==================================================
+      # Expose a virtual mic that clients (acrux, Windows PCs) stream into
+      # while a Sunshine session is live, so games hear you talk.
+      myMicForward.enableReceiver = true;
 
       # ==================================================
       # Video

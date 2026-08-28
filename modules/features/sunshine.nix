@@ -9,6 +9,13 @@
       confFile = (pkgs.formats.keyValue { }).generate "sunshine.conf"
         config.services.sunshine.settings;
 
+      # Mic-forward lifecycle: the receiver unit runs only while a streaming
+      # session is live (prep/undo). Senders are started manually on whichever
+      # client PC is in use — Sunshine does not expose the connected client's
+      # IP to prep commands, so per-client auto-triggering is not possible.
+      micStart = "systemctl --user start mic-forward-recv";
+      micStop = "systemctl --user stop mic-forward-recv";
+
       # Singleton launcher used by EVERYTHING (unit and manual runs): a second
       # invocation exits instantly instead of racing for ports or corrupting
       # state. The lock holder execs the CAP_SYS_ADMIN ELF wrapper so KMS
@@ -49,12 +56,13 @@
         applications = {
           env.PATH = "$(PATH):$(HOME)/.local/bin";
           apps = [
-            { name = "Desktop"; }
+            { name = "Desktop"; prep-cmd = [ { do = micStart; undo = micStop; } ]; }
             {
               name = "Steam Big Picture";
               detached = [ "setsid steam steam://open/bigpicture" ];
               prep-cmd = [
                 { do = ""; undo = "setsid steam steam://close/bigpicture"; }
+                { do = micStart; undo = micStop; }
               ];
             }
           ];

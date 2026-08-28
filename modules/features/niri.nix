@@ -233,6 +233,12 @@
             props.allow-when-locked = true;
             content.spawn-sh = "${lib.getExe' pkgs.wireplumber "wpctl"} set-mute @DEFAULT_AUDIO_SOURCE@ toggle";
           };
+          # Mic forwarding sender toggle (micForward feature; the unit only
+          # exists on hosts with myMicForward.enableSender).
+          "Mod+M" = _: {
+            props.hotkey-overlay-title = "Toggle Mic Forward";
+            content.spawn-sh = lib.getExe self'.packages.myMicForwardToggle;
+          };
 
           "XF86MonBrightnessDown" = _: {
             props.allow-when-locked = true;
