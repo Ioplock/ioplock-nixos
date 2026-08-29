@@ -15,7 +15,6 @@
         self.nixosModules.firefox
         self.nixosModules.fonts
         self.nixosModules.git
-        self.nixosModules.micForward
         self.nixosModules.nh
         self.nixosModules.opencode
         self.nixosModules.quickshell
@@ -95,17 +94,6 @@
       };
 
       programs.nh.flake = "/home/ioplock/nixconf";
-
-      # ==================================================
-      # Mic forwarding (Moonlight client)
-      # ==================================================
-      # Start the sender manually when sitting at this machine
-      # (systemctl --user start mic-forward-send) so games on mimosa hear
-      # you talk through its virtual mic.
-      myMicForward = {
-        enableSender = true;
-        host = "192.168.1.92";
-      };
 
       # ==================================================
       # Desktop
