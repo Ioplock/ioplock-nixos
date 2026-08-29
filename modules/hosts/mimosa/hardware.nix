@@ -51,6 +51,18 @@
         fsType = "ext4";
       };
 
+      # Stellaris: bind mount Steam Workshop content to game mods directory
+      # Required by ldu-tool (linux-dlc-unlocker-tool) for DLC/mod compatibility
+      fileSystems."/mnt/disk0/games/steamapps/common/Stellaris/steam_settings/mods" = {
+        device = "/mnt/disk0/games/steamapps/workshop/content/281990";
+        fsType = "none";
+        options = [
+          "bind"
+          "x-systemd.requires-mounts-for=/mnt/disk0"
+        ];
+        depends = [ "/mnt/disk0" ];
+      };
+
       swapDevices = [
         { device = "/dev/disk/by-uuid/70725dbc-8205-43b1-ab0b-9bd1afb9a849"; }
       ];
