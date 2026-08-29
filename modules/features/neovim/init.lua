@@ -16,6 +16,23 @@ do
   end
 end
 
+-- Stub for `lazy.nvim` so snacks.dashboard doesn't error with `require("lazy.stats").stats()`
+-- We don't use lazy.nvim (Nix manages plugins), but snacks dashboard startup section calls it unguarded.
+do
+  if not package.loaded["lazy.stats"] then
+    package.loaded["lazy.stats"] = { stats = function() return { count = 0, loaded = 0, startuptime = 0 } end }
+  end
+  if not package.loaded["lazy"] then
+    package.loaded["lazy"] = { stats = package.loaded["lazy.stats"].stats }
+  end
+  if not package.loaded["lazy.core.config"] then
+    package.loaded["lazy.core.config"] = { spec = { plugins = {} } }
+  end
+  if not package.loaded["lazy.core.util"] then
+    package.loaded["lazy.core.util"] = { get_unloaded_rtp = function() return {} end }
+  end
+end
+
 -- === Core notifications (must be early, used by noice) ===
 pcall(function()
   require("notify").setup({ stages = "fade", timeout = 2000 })
@@ -59,7 +76,14 @@ pcall(function()
   snacks.setup({
     picker = { enabled = true }, -- Ctrl+P file finder
     explorer = { enabled = false }, -- we use neo-tree, so keep snacks explorer off
-    dashboard = { enabled = true }, -- VSCode welcome screen with recent files
+    dashboard = {
+      enabled = true,
+      sections = {
+        { section = "header" },
+        { section = "keys", gap = 1, padding = 1 },
+        -- startup section disabled to avoid `require("lazy.stats")` error (we don't use lazy.nvim)
+      },
+    },
     indent = { enabled = true }, -- indent guides
     notifier = { enabled = true },
     bigfile = { enabled = true },
