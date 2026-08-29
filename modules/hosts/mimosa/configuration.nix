@@ -20,6 +20,7 @@
         self.nixosModules.opencode
         self.nixosModules.rofi
         self.nixosModules.shell
+        self.nixosModules.neovim
         self.nixosModules.singBox
         self.nixosModules.sops
         self.nixosModules.ssh

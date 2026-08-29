@@ -24,6 +24,7 @@
         self.nixosModules.ssh
         self.nixosModules.user
         self.nixosModules.shell
+        self.nixosModules.neovim
         self.nixosModules.niri
         self.nixosModules.vscode
         self.nixosModules.yazi

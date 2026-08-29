@@ -39,8 +39,7 @@
       imports = [ wlib.wrapperModules.zsh ];
 
       env = {
-        # TODO: Replace this basic Neovim with a configured wrapper-modules build.
-        EDITOR = lib.getExe pkgs.neovim;
+        EDITOR = lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.myNeovim;
         MANPAGER = "sh -c 'col -bx | bat --language=man --plain'";
         PAGER = "less -FRX";
         STARSHIP_CONFIG = "${starshipConfig}";
@@ -66,7 +65,6 @@
         lazygit
         less
         nano
-        neovim
         self.packages.${pkgs.stdenv.hostPlatform.system}.myNh
         nil
         nix-output-monitor
