@@ -16,6 +16,7 @@
         nui-nvim # UI library for neo-tree and noice
         nvim-notify # Nice notification popups (used by noice)
         nvim-web-devicons # File icons for neo-tree, bufferline, lualine
+        lazy-nvim # Provides lazy.core.* (snacks/which-key check lazy.stats) - stub fallback in init.lua
 
         # === File navigation (your picks) ===
         neo-tree-nvim # VSCode-like sidebar file tree - press Ctrl+B (recommended)
