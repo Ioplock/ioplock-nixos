@@ -105,6 +105,12 @@ Ho4zRJEIXy8O
       networking.firewall = {
         enable = true;
         allowedTCPPorts = [ 22 ];
+        allowedUDPPortRanges = [
+          {
+            from = 17780;
+            to = 17785;
+          }
+        ];
       };
 
       # ==================================================
