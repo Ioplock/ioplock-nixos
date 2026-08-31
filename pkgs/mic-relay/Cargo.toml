@@ -1,0 +1,39 @@
+[package]
+name = "mic-relay"
+version = "0.1.0"
+edition = "2021"
+description = "LAN mic passthrough to mimosa — headless server + GUI client, mDNS discoverable"
+license = "MIT"
+
+[[bin]]
+name = "mic-relay"
+path = "src/main.rs"
+
+[features]
+default = ["client", "cli"]
+client = ["dep:eframe", "dep:egui", "cpal", "opus"]
+server = ["opus"]
+cli = []
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+bytes = "1.6"
+futures = "0.3"
+mdns-sd = "0.13"
+hostname = "0.4"
+humantime = "2.1"
+cpal = { version = "0.15", optional = true }
+opus = { version = "0.3", optional = true }
+eframe = { version = "0.27", optional = true, default-features = false, features = ["default_fonts", "glow"] }
+egui = { version = "0.27", optional = true }
+
+[profile.release]
+lto = "thin"
+strip = true
