@@ -1,107 +1,109 @@
-{ self, inputs, ... }:
+{
+  self,
+  inputs,
+  ...
+}:
 {
   flake.wrappers.neovim =
-    { pkgs, wlib, lib, ... }:
+    {
+      pkgs,
+      wlib,
+      ...
+    }:
     {
       imports = [ wlib.wrapperModules.neovim ];
 
-      settings.config_directory = ./neovim;
+      settings = {
+        aliases = [
+          "vi"
+          "vim"
+        ];
+        config_directory = ./neovim;
+      };
 
-      # All plugins are declared here; Nix puts them on runtimepath.
-      # Lua in ./neovim/init.lua does `require("plugin").setup({})`.
-      # Keep this list sorted by purpose so you instantly see what each does.
+      # Nix owns plugin installation; Lua only configures these plugins.
       specs.general = with pkgs.vimPlugins; [
         # === Core / dependencies ===
-        plenary-nvim # Lua helpers for neo-tree, telescope, harpoon
+        plenary-nvim # Lua helpers for neo-tree and harpoon
         nui-nvim # UI library for neo-tree and noice
-        nvim-notify # Nice notification popups (used by noice)
         nvim-web-devicons # File icons for neo-tree, bufferline, lualine
-        lazy-nvim # Provides lazy.core.* (snacks/which-key check lazy.stats) - stub fallback in init.lua
 
-        # === File navigation (your picks) ===
-        neo-tree-nvim # VSCode-like sidebar file tree - press Ctrl+B (recommended)
-        snacks-nvim # Fast picker for Ctrl+P files, grep, buffers + dashboard + indent guides
+        # === File navigation ===
+        neo-tree-nvim # Sidebar file tree
+        snacks-nvim # Pickers, dashboard, input, notifications, and utilities
 
-        # === Completion & snippets (VSCode-like typing) ===
-        blink-cmp # Fast completion popup (Rust) - like VSCode Ctrl+Space
-        luasnip # Snippet engine for blink
-        friendly-snippets # VSCode snippet collection (for, useState, def, etc)
+        # === Completion and snippets ===
+        blink-cmp # Completion UI and native snippet engine
+        friendly-snippets # VSCode-format snippet collection loaded by blink.cmp
 
         # === LSP / Treesitter / Diagnostics ===
         nvim-lspconfig # Bridge so `vim.lsp.enable()` works
         lazydev-nvim # Better Lua help when editing nvim config
         (nvim-treesitter.withAllGrammars) # Syntax highlight for all languages
-        nvim-ts-autotag # Auto-close JSX/HTML tags - crucial for Next.js/React
-        conform-nvim # Formatter (manual with <leader>f per your choice)
-        nvim-lint # Shows lint errors like VSCode Problems panel
-        trouble-nvim # Pretty diagnostics list - VSCode Problems view
+        nvim-ts-autotag # Auto-close JSX/HTML tags
+        conform-nvim # Manual formatting
+        nvim-lint # Standalone Nix lint diagnostics
+        trouble-nvim # Diagnostics list
 
-        # === Git (VSCode Source Control) ===
-        gitsigns-nvim # Git gutter signs + hunk preview
+        # === Git ===
+        gitsigns-nvim # Git gutter signs and hunk actions
 
-        # === VSCode-like UI ===
-        lualine-nvim # Bottom status line (mode, branch, errors)
-        bufferline-nvim # Top tabs like VSCode editor tabs
-        which-key-nvim # Popup that shows you available keys (like Ctrl+Shift+P)
-        noice-nvim # Fancy command line and LSP progress toasts
-        dressing-nvim # Better input/select boxes (VSCode quick input)
-        todo-comments-nvim # Highlights TODO/FIXME like VSCode extension
+        # === UI ===
+        lualine-nvim # Status line
+        bufferline-nvim # Buffer tabs
+        which-key-nvim # Discoverable leader mappings
+        noice-nvim # Command line, messages, and LSP progress UI
+        todo-comments-nvim # Highlight TODO/FIXME annotations
 
-        # === Multi-file & editing helpers (VSCode-like) ===
-        flash-nvim # Jump anywhere with `S` - faster than mouse
-        harpoon2 # Pin 4 files to Ctrl+1..4 for instant switch (Next.js workflow)
-        grug-far-nvim # Project search/replace with live preview (Ctrl+Shift+F)
-        persistence-nvim # Auto-restore last session like VSCode reopen
-        mini-nvim # Collection: mini.pairs (auto brackets), mini.surround, mini.ai (better text objects), mini.icons
+        # === Editing and project workflow ===
+        flash-nvim # Fast motion
+        harpoon2 # Pinned-file navigation
+        grug-far-nvim # Project-wide search and replace
+        persistence-nvim # Session save and restore
+        mini-nvim # Pairs, surround, text objects, and buffer removal
       ];
 
-      # Binaries that Neovim needs at runtime (like VSCode extensions' servers).
-      # Nix puts these on PATH for the wrapped nvim, you call them via vim.lsp.enable().
-      # No mason.nvim needed - Nix is your package manager.
+      # Runtime tools stay on the wrapped editor's PATH; Mason is unnecessary.
       extraPackages = with pkgs; [
-        # --- Core search (for snacks picker) ---
-        ripgrep # Fast grep for picker live_grep
-        fd # Fast file finder for picker
-        fzf # Fallback fuzzy finder
-        lazygit # Git UI inside nvim via snacks.lazygit
+        # --- Core ---
+        curl
+        fd
+        git
+        lazygit
+        ripgrep
+        wl-clipboard
 
-        # --- Nix (your stack) ---
-        nil # Nix LSP (nil_ls)
-        nixd # Nix LSP with better docs (nixd)
-        alejandra # Nix formatter (used by conform)
-        statix # Nix linter
+        # --- Nix ---
+        alejandra
+        nixd
+        statix
 
         # --- Python ---
-        basedpyright # Python type checker LSP
-        ruff # Python formatter + linter (super fast)
+        basedpyright
+        ruff
 
         # --- Next.js / React / TypeScript ---
-        vtsls # TypeScript LSP (faster than tsserver, for Next.js)
-        vscode-langservers-extracted # JSON, HTML, CSS, ESLint LSPs
-        tailwindcss-language-server # Tailwind CSS completions
-        prettierd # JS/TS/JSON formatter daemon
-        eslint_d # JS/TS linter daemon
+        prettierd
+        tailwindcss-language-server
+        vscode-langservers-extracted
+        vtsls
 
-        # --- Lua (for editing nvim config) ---
-        lua-language-server # Lua LSP (lua_ls)
-        stylua # Lua formatter
+        # --- Lua ---
+        lua-language-server
+        stylua
       ];
     };
 
-  flake.nixosModules.neovim =
-    { pkgs, ... }:
-    {
-      environment.systemPackages = [
-        self.packages.${pkgs.stdenv.hostPlatform.system}.myNeovim
-      ];
-    };
+  flake.nixosModules.neovim = { pkgs, ... }: {
+    environment.systemPackages = [
+      self.packages.${pkgs.stdenv.hostPlatform.system}.myNeovim
+    ];
+  };
 
-  perSystem =
-    { pkgs, ... }:
-    {
-      packages.myNeovim = inputs.wrapper-modules.wrappers.neovim.wrap {
-        inherit pkgs;
-        imports = [ self.wrapperModules.neovim ];
-      };
+  perSystem = { pkgs, ... }: {
+    packages.myNeovim = inputs.wrapper-modules.wrappers.neovim.wrap {
+      inherit pkgs;
+      imports = [ self.wrapperModules.neovim ];
     };
+  };
 }
