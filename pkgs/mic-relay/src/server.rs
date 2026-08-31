@@ -305,7 +305,22 @@ async fn handle_client(
                 match msg {
                     Ok(ControlMessage::RequestActive { client_id: req }) => {
                         let mut s = state.write().await;
-                        if s.clients.contains_key(&req) {
+                        if req.is_empty() {
+                            // Release: clear active
+                            if s.active_id.is_some() {
+                                s.active_id = None;
+                                for rec in s.clients.values_mut() {
+                                    if rec.info.state == ClientState::Active {
+                                        rec.info.state = ClientState::Connected;
+                                    }
+                                }
+                                let _ = bcast_tx.send(ControlMessage::ActiveChanged {
+                                    active_id: None,
+                                    active_name: None,
+                                });
+                                broadcast_list(&state, &bcast_tx).await;
+                            }
+                        } else if s.clients.contains_key(&req) {
                             s.active_id = Some(req.clone());
                             let active_clone = s.active_id.clone();
                             // mark states
@@ -318,10 +333,17 @@ async fn handle_client(
                         }
                     }
                     Ok(ControlMessage::VuUpdate { client_id: vu_id, vu_db }) => {
-                        let mut s = state.write().await;
-                        if let Some(rec) = s.clients.get_mut(&vu_id) {
-                            rec.info.vu_db = vu_db;
+                        {
+                            let mut s = state.write().await;
+                            if let Some(rec) = s.clients.get_mut(&vu_id) {
+                                rec.info.vu_db = vu_db;
+                            }
                         }
+                        // Broadcast VU so all clients see live meters
+                        let _ = bcast_tx.send(ControlMessage::VuUpdate {
+                            client_id: vu_id,
+                            vu_db,
+                        });
                     }
                     Ok(ControlMessage::Mute { client_id: mid, muted }) => {
                         let mut s = state.write().await;
