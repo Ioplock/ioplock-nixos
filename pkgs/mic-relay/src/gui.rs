@@ -10,16 +10,15 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-// Lucide helpers
+// Lucide helpers — lucide font is added as fallback to Proportional, so we don't need Name("lucide").
+// Using Name("lucide") directly panics on first frame before set_fonts takes effect.
 #[cfg(feature = "client")]
 fn lucide(icon: lucide_icons::Icon) -> String {
     char::from(icon).to_string()
 }
 #[cfg(feature = "client")]
 fn lucide_rich(icon: lucide_icons::Icon, size: f32) -> egui::RichText {
-    egui::RichText::new(char::from(icon).to_string())
-        .family(egui::FontFamily::Name("lucide".into()))
-        .size(size)
+    egui::RichText::new(char::from(icon).to_string()).size(size)
 }
 
 #[derive(Clone)]
@@ -77,18 +76,20 @@ pub fn run_gui(server: String, name: String) -> Result<()> {
     let mut fonts_initialized = false;
 
     eframe::run_simple_native("Mic Relay", opts, move |ctx, _frame| {
-        // Install Lucide font once
+        // Install Lucide font as fallback to Proportional/Monospace once
         if !fonts_initialized {
             let mut fonts = egui::FontDefinitions::default();
             fonts.font_data.insert(
                 "lucide".to_owned(),
                 egui::FontData::from_static(lucide_icons::LUCIDE_FONT_BYTES),
             );
-            fonts
-                .families
-                .entry(egui::FontFamily::Name("lucide".into()))
-                .or_default()
-                .push("lucide".to_owned());
+            // Add as fallback so any lucide char falls back to lucide font
+            if let Some(proportional) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                proportional.push("lucide".to_owned());
+            }
+            if let Some(monospace) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                monospace.push("lucide".to_owned());
+            }
             ctx.set_fonts(fonts);
             fonts_initialized = true;
         }
@@ -134,11 +135,6 @@ pub fn run_gui(server: String, name: String) -> Result<()> {
                         egui::TextEdit::singleline(&mut st.server_input)
                             .hint_text("192.168.1.92:50051"),
                     );
-                    let connect_btn = egui::Button::new(
-                        egui::RichText::new(format!(" {} Connect", lucide(lucide_icons::Icon::Plug)))
-                            .family(egui::FontFamily::Name("lucide".into())),
-                    );
-                    // Use small helper: actual text is lucide char + label, but we keep simple
                     if ui
                         .add_sized([70.0, 20.0], egui::Button::new("Connect"))
                         .clicked()
@@ -212,13 +208,10 @@ pub fn run_gui(server: String, name: String) -> Result<()> {
                             .unwrap_or(false);
                         if is_active {
                             if ui
-                                .button(
-                                    egui::RichText::new(format!(
-                                        "{} Release",
-                                        lucide(lucide_icons::Icon::MicOff)
-                                    ))
-                                    .family(egui::FontFamily::Name("lucide".into())),
-                                )
+                                .button(format!(
+                                    "{} Release",
+                                    lucide(lucide_icons::Icon::MicOff)
+                                ))
                                 .clicked()
                             {
                                 if let Some(tx) = tx_opt.clone() {
@@ -228,10 +221,10 @@ pub fn run_gui(server: String, name: String) -> Result<()> {
                                 }
                             }
                         } else if ui
-                            .button(egui::RichText::new(format!(
+                            .button(format!(
                                 "{} Take Mic",
                                 lucide(lucide_icons::Icon::Mic)
-                            )))
+                            ))
                             .clicked()
                         {
                             if let Some(id) = st.my_id.clone() {
@@ -334,10 +327,7 @@ pub fn run_gui(server: String, name: String) -> Result<()> {
                                         };
                                         ui.colored_label(
                                             col,
-                                            egui::RichText::new(char::from(icon).to_string())
-                                                .family(egui::FontFamily::Name(
-                                                    "lucide".into(),
-                                                )),
+                                            egui::RichText::new(char::from(icon).to_string()).size(14.0),
                                         );
                                         // Name with truncation
                                         let name_txt = if is_me {
