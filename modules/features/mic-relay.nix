@@ -86,6 +86,10 @@
               ];
               wants = [ "pipewire.service" ];
               wantedBy = [ "default.target" ];
+              path = with pkgs; [
+                pipewire
+                pulseaudio
+              ];
               serviceConfig = {
                 ExecStart = "${lib.getExe cfg.server.package} server --source-name ${cfg.server.sourceName} --port ${toString cfg.server.port} --audio-port ${toString cfg.server.audioPort}";
                 Restart = "always";
@@ -99,8 +103,12 @@
             # myUser.linger = true/false is respected.
             myUser.linger = lib.mkDefault true;
 
-            # CLI helper available on server for `mic-relay ctl status`
-            environment.systemPackages = [ cfg.server.package ];
+            # CLI helper + pipewire tools for debugging virtual mic
+            environment.systemPackages = with pkgs; [
+              cfg.server.package
+              pipewire
+              pulseaudio
+            ];
 
             services.avahi = lib.mkIf cfg.server.mdns {
               enable = true;
@@ -120,7 +128,11 @@
           })
 
           (lib.mkIf (cfg.role == "client" || cfg.role == "both") {
-            environment.systemPackages = [ cfg.client.package ];
+            environment.systemPackages = with pkgs; [
+              cfg.client.package
+              pipewire
+              pulseaudio
+            ];
 
             systemd.user.services.mic-relay-client = lib.mkIf cfg.client.autoStart {
               description = "mic-relay GUI client";
@@ -175,7 +187,7 @@
         src = micRelaySrc;
         cargoLock.lockFile = micRelaySrc + "/Cargo.lock";
 
-        nativeBuildInputs = nativeCommon;
+        nativeBuildInputs = nativeCommon ++ [ pkgs.makeWrapper ];
         buildInputs = guiBuildInputs;
         doCheck = false;
 
@@ -186,6 +198,13 @@
           "--features"
           "client,cli,server"
         ];
+
+        # eframe/winit dlopen libwayland-client.so at runtime, so RPATH is not enough.
+        # Wrap with LD_LIBRARY_PATH so `winit` can load wayland even when not in system PATH.
+        postFixup = ''
+          wrapProgram $out/bin/mic-relay \
+            --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath guiBuildInputs}
+        '';
 
         # eframe needs wayland-scanner etc at build time
         # pkg-config finds opus/alsa

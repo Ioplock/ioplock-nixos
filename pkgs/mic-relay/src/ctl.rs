@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports)]
 use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;

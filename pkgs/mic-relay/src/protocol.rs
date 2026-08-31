@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_CONTROL_PORT: u16 = 50051;

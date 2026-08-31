@@ -1,3 +1,4 @@
 temp/
 *.code-workspace
 result
+pkgs/mic-relay/target/

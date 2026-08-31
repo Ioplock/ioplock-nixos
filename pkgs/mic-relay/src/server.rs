@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables)]
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::net::SocketAddr;

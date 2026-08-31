@@ -1,4 +1,5 @@
 #![cfg(feature = "client")]
+#![allow(dead_code, unused_imports, unused_variables, unused_mut)]
 
 use std::sync::{Arc, Mutex};
 
