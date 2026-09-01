@@ -130,6 +130,7 @@
           (lib.mkIf (cfg.role == "client" || cfg.role == "both") {
             environment.systemPackages = with pkgs; [
               cfg.client.package
+              self.packages.${pkgs.stdenv.hostPlatform.system}.myMicRelayDesktop
               pipewire
               pulseaudio
             ];
@@ -213,6 +214,21 @@
           description = "mic-relay GUI client (also can run as server with `mic-relay server`)";
           mainProgram = "mic-relay";
         };
+      };
+
+      packages.myMicRelayDesktop = pkgs.makeDesktopItem {
+        name = "mic-relay";
+        desktopName = "Mic Relay";
+        genericName = "LAN mic passthrough";
+        comment = "Forward mic to mimosa virtual mic — no console";
+        exec = "mic-relay";
+        icon = "audio-input-microphone";
+        categories = [
+          "AudioVideo"
+          "Audio"
+        ];
+        terminal = false;
+        startupWMClass = "mic-relay";
       };
 
       packages.myMicRelayServer = pkgs.rustPlatform.buildRustPackage {

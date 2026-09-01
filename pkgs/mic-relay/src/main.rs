@@ -1,4 +1,6 @@
 #![allow(dead_code, unused_imports, unused_variables)]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod ctl;
 mod mdns;
 mod protocol;
