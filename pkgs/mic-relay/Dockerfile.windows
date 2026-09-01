@@ -39,9 +39,10 @@ RUN rustup target add x86_64-pc-windows-gnu
 # Build release Windows exe with GUI features
 # Opus C code built via audiopus_sys/cmake defaults to -fstack-protector-strong + _FORTIFY_SOURCE
 # which under mingw + rust's -nodefaultlibs leaves __stack_chk_fail/__memcpy_chk undefined.
-# Disable protectors/fortify for the C build so no libssp-0.dll runtime dep is needed.
+# Try to disable for C build; if cmake still forces it, link ssp statically (no libssp-0.dll).
 ENV CFLAGS="-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 ENV CXXFLAGS="-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+ENV RUSTFLAGS="-C link-arg=-Wl,-Bstatic -C link-arg=-lssp -C link-arg=-lssp_nonshared -C link-arg=-Wl,-Bdynamic"
 RUN cargo build --release --target x86_64-pc-windows-gnu --features client,cli
 
 # Export stage — copy exe to /out for `docker build --output` or `docker cp`

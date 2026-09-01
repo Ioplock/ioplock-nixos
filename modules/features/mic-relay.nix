@@ -252,9 +252,10 @@
         # CMake 4 (Nixpkgs) dropped <3.5 compat; Opus CMakeLists is 2.8
         env.CMAKE_POLICY_VERSION_MINIMUM = "3.5";
         # Opus C stack protector/fortify leaves undefined __stack_chk_fail on mingw;
-        # disable so no libssp-0.dll runtime dep on Windows.
+        # disable for C, and link ssp statically as fallback (no libssp-0.dll).
         env.CFLAGS = "-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0";
         env.CXXFLAGS = "-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0";
+        env.RUSTFLAGS = "-C link-arg=-Wl,-Bstatic -C link-arg=-lssp -C link-arg=-lssp_nonshared -C link-arg=-Wl,-Bdynamic";
         cargoBuildFlags = [
           "--features"
           "client,cli"
