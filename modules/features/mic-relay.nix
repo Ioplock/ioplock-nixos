@@ -240,8 +240,9 @@
 
       # Windows cross via mingw — best-effort (Docker is reliable fallback).
       # Requires cmake for audiopus_sys (Opus) + policy workaround for CMake 4.
-      # Opus C build defaults to -fstack-protector + _FORTIFY_SOURCE which under
-      # mingw + rust -nodefaultlibs leaves __stack_chk_fail undefined; disable.
+      # Opus cmake defaults OPUS_STACK_PROTECTOR/FORTIFY/HARDENING=ON which under
+      # mingw forces libssp (-fstack-protector + -D_FORTIFY_SOURCE) and leaves
+      # __stack_chk_fail undefined with Rust's -nodefaultlibs; force OFF via patch.
       packages.myMicRelayWindowsCross = pkgs.pkgsCross.mingwW64.rustPlatform.buildRustPackage {
         pname = "mic-relay-windows";
         version = "0.1.0";
@@ -249,13 +250,35 @@
         cargoLock.lockFile = micRelaySrc + "/Cargo.lock";
         nativeBuildInputs = nativeCommon ++ [ pkgs.cmake ];
         buildInputs = [ pkgs.pkgsCross.mingwW64.windows.pthreads ];
-        # CMake 4 (Nixpkgs) dropped <3.5 compat; Opus CMakeLists is 2.8
+        # CMake 4 dropped <3.5 compat; Opus is 3.1
         env.CMAKE_POLICY_VERSION_MINIMUM = "3.5";
-        # Opus C stack protector/fortify leaves undefined __stack_chk_fail on mingw;
-        # disable for C, and link ssp statically as fallback (no libssp-0.dll).
+        # Also disable for any C that still checks
         env.CFLAGS = "-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0";
         env.CXXFLAGS = "-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0";
-        env.RUSTFLAGS = "-C link-arg=-Wl,-Bstatic -C link-arg=-lssp -C link-arg=-lssp_nonshared -C link-arg=-Wl,-Bdynamic";
+        # Patch audiopus_sys to force cmake OFF for those options (CFLAGS alone not enough)
+        postPatch = ''
+          for f in $(find . -path "*/audiopus_sys-*/build.rs" 2>/dev/null); do
+            echo "patching $f to disable OPUS_STACK_PROTECTOR/FORTIFY/HARDENING"
+            substituteInPlace "$f" --replace-quiet 'cmake::build(opus_path)' 'cmake::Config::new(opus_path).define("OPUS_STACK_PROTECTOR","OFF").define("OPUS_FORTIFY_SOURCE","OFF").define("OPUS_HARDENING","OFF").build()'
+          done
+          # fallback if cargo vendor dir not yet in source: also patch cargo registry if present during build
+          if [ -n "''${cargoVendorDir:-}" ] && [ -d "$cargoVendorDir" ]; then
+            for f in "$cargoVendorDir"/audiopus_sys-*/build.rs; do
+              [ -f "$f" ] && substituteInPlace "$f" --replace-quiet 'cmake::build(opus_path)' 'cmake::Config::new(opus_path).define("OPUS_STACK_PROTECTOR","OFF").define("OPUS_FORTIFY_SOURCE","OFF").define("OPUS_HARDENING","OFF").build()' && echo "patched vendor $f" || true
+            done
+          fi
+        '';
+        # Also patch at preBuild time (after cargo vendor is unpacked)
+        preBuild = ''
+          if [ -n "''${cargoVendorDir:-}" ] && [ -d "$cargoVendorDir" ]; then
+            for f in "$cargoVendorDir"/audiopus_sys-*/build.rs; do
+              [ -f "$f" ] && grep -q 'OPUS_STACK_PROTECTOR.*OFF' "$f" || {
+                echo "preBuild patching $f"
+                substituteInPlace "$f" --replace-quiet 'cmake::build(opus_path)' 'cmake::Config::new(opus_path).define("OPUS_STACK_PROTECTOR","OFF").define("OPUS_FORTIFY_SOURCE","OFF").define("OPUS_HARDENING","OFF").build()'
+              }
+            done
+          fi
+        '';
         cargoBuildFlags = [
           "--features"
           "client,cli"

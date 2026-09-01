@@ -37,12 +37,15 @@ COPY pkgs/mic-relay/src ./src
 RUN rustup target add x86_64-pc-windows-gnu
 
 # Build release Windows exe with GUI features
-# Opus C code built via audiopus_sys/cmake defaults to -fstack-protector-strong + _FORTIFY_SOURCE
-# which under mingw + rust's -nodefaultlibs leaves __stack_chk_fail/__memcpy_chk undefined.
-# Try to disable for C build; if cmake still forces it, link ssp statically (no libssp-0.dll).
+# Opus cmake defaults to OPUS_STACK_PROTECTOR/FORTIFY/HARDENING=ON which under
+# mingw adds -fstack-protector-strong + libssp (needs libssp-0.dll). CFLAGS alone
+# doesn't disable the cmake options, so patch audiopus_sys to force OFF.
 ENV CFLAGS="-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
 ENV CXXFLAGS="-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
-ENV RUSTFLAGS="-C link-arg=-Wl,-Bstatic -C link-arg=-lssp -C link-arg=-lssp_nonshared -C link-arg=-Wl,-Bdynamic"
+RUN cargo fetch || true; \
+    for f in /usr/local/cargo/registry/src/index.crates.io-*/audiopus_sys-*/build.rs; do \
+      [ -f "$f" ] && sed -i 's|cmake::build(opus_path)|cmake::Config::new(opus_path).define("OPUS_STACK_PROTECTOR","OFF").define("OPUS_FORTIFY_SOURCE","OFF").define("OPUS_HARDENING","OFF").build()|' "$f" && echo "patched $f" || true; \
+    done
 RUN cargo build --release --target x86_64-pc-windows-gnu --features client,cli
 
 # Export stage — copy exe to /out for `docker build --output` or `docker cp`
