@@ -240,6 +240,8 @@
 
       # Windows cross via mingw — best-effort (Docker is reliable fallback).
       # Requires cmake for audiopus_sys (Opus) + policy workaround for CMake 4.
+      # Opus C build defaults to -fstack-protector + _FORTIFY_SOURCE which under
+      # mingw + rust -nodefaultlibs leaves __stack_chk_fail undefined; disable.
       packages.myMicRelayWindowsCross = pkgs.pkgsCross.mingwW64.rustPlatform.buildRustPackage {
         pname = "mic-relay-windows";
         version = "0.1.0";
@@ -249,6 +251,10 @@
         buildInputs = [ pkgs.pkgsCross.mingwW64.windows.pthreads ];
         # CMake 4 (Nixpkgs) dropped <3.5 compat; Opus CMakeLists is 2.8
         env.CMAKE_POLICY_VERSION_MINIMUM = "3.5";
+        # Opus C stack protector/fortify leaves undefined __stack_chk_fail on mingw
+        env.CFLAGS = "-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0";
+        env.CXXFLAGS = "-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0";
+        env.RUSTFLAGS = "-C link-arg=-lssp";
         cargoBuildFlags = [
           "--features"
           "client,cli"
