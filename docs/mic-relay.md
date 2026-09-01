@@ -5,14 +5,15 @@
 need a microphone. The client on your gaming machine (`acrux`,
 `192.168.1.92`, Windows, or any LAN host) captures its local mic, encodes it
 with Opus, and sends it over UDP to `mimosa`. `mimosa` exposes a virtual
-PipeWire source `MicRelay.monitor` that games see as a normal mic. Only one
+PipeWire **source** `MicRelay` (real `Audio/Source`, not the hidden
+`MicRelay.monitor` monitor) that games see as a normal mic. Only one
 client is *Active* at a time (exclusive).
 
 ```
 acrux / Windows / phone ──TCP 50051──► mimosa (mic-relay server)
-        ──UDP 50052 Opus──►             ──► MicRelay (null-sink) ──► MicRelay.monitor
-                                                          ▲
-                                                          │ games select this
+        ──UDP 50052 Opus──►             ──► MicRelay sink ──► MicRelay.monitor ──► MicRelay source
+                                                         pacat/pw-cat  module-remap-source  ▲
+                                                                                             │ games select MicRelay
 ```
 
 ---
@@ -31,24 +32,29 @@ acrux / Windows / phone ──TCP 50051──► mimosa (mic-relay server)
 
 ### Server (`mimosa`)
 
-1. **Virtual source** – on start `server.rs:ensure_virtual_source` runs
-   `pactl load-module module-null-sink sink_name=MicRelay` (fallback
-   `pw-cli create … support.null-audio-sink`). The sink’s monitor
-   `MicRelay.monitor` is the mic games select. If PipeWire isn’t ready it logs
-   a warning and still serves control.
+1. **Virtual source** – on start `server.rs:ensure_virtual_source` ensures
+   null-sink `MicRelay` exists (`pactl load-module module-null-sink`
+   else `pw-cli` adapter), then creates a **real** `Audio/Source`
+   `MicRelay` via `pactl load-module module-remap-source master=MicRelay.monitor`
+   (fallback `MicRelayMic` if name collides). That source is what games see
+   (appears in `pactl list sources`, `wpctl` Filters `MicRelay [Audio/Source]`,
+   `pw-link MicRelay:monitor -> input.MicRelay`). If remap fails, fallback is
+   `MicRelay.monitor` (some UIs hide monitors). Also runs `pactl set-default-source`.
 2. **mDNS** – `MdnsPublisher::new("MicRelay", 50051)` advertises
    `MicRelay-mimosa._mic-relay._tcp.local. → 192.168.1.92:50051`. Clients use
    `mdns::browse(1200ms)` or fall back to `192.168.1.92:50051`.
-3. **Playback** – `audio::spawn_output_playback("MicRelay")` finds the output
-   device whose name contains `MicRelay` (else default), builds a `cpal` output
-   stream and a `rtrb::RingBuffer<f32>(48000*4)`. The stream’s callback pops
-   `f32` mono and duplicates to all channels (F32/I16/U16 handled). The
-   `Producer` is kept behind `Arc<Mutex<Producer>>` and `mem::forget`’d for the
-   server lifetime.
+3. **Playback** – `audio::spawn_virtual_mic_writer("MicRelay")` spawns a
+   dedicated thread feeding `pacat -p --device MicRelay --rate 48000 --format float32le
+   --channels 1 --latency-msec 20` (fallback `pw-cat -p --target MicRelay --format f32 --latency 20ms`)
+   via a small `rtrb::RingBuffer<f32>(8192)` (~170 ms) with jitter trim
+   (>2400 samples / 50 ms drops 480 oldest, >4000 drops extra 960). This fixes the
+   prior `cpal` ALSA `default_output_device` fallback that routed mic to
+   `sink-sunshine-stereo` speakers (`pw-link alsa_playback.mic-relay -> sunshine` P54) and
+   the 4 s ring that caused 1–2 s lag. Legacy `spawn_output_playback` is kept strict (no default fallback).
 4. **Audio loop** – `audio_loop` binds UDP `0.0.0.0:50052`, for each datagram
    checks `AudioHeader::decode` (12 bytes: `seq|timestamp_ms|client_id_hash`),
    drops frames whose `hash != hash(active_id)`, decodes Opus (`opus::Decoder`
-   48k mono) and pushes `f32` to the ring. Without `opus` it just logs.
+   48k mono) and pushes `f32` to the ring (drops newest if full, preserving low latency). Without `opus` it just logs.
 5. **Control** – `TcpListener` on `0.0.0.0:50051`. Each `handle_client` does:
    * `Hello {client_id,name,version}` → assigns `c-{port}-{hash(name)}` if empty,
      dedupes stale same-host `name+IP` entries, inserts `ClientInfo`,
@@ -75,9 +81,10 @@ name.
   “connected but no client list”). If no `ClientList` in 800 ms it sends
   `Ping` (server rebroadcasts).
 * `spawn_input_capture` (`audio.rs`) probes `cpal::default_input_device`,
-  prefers 48 kHz mono F32 (else device default), downmixes, naive resamples if
+  prefers 48 kHz mono F32 (else device default), requests `BufferSize::Fixed(960)`
+  (20 ms instead of host default 100 ms+) for low latency, downmixes, naive resamples if
   needed, computes `rms_db` → `-100…0 dBFS` VU, encodes 960-sample (20 ms) Opus
-  frames at 32 kbps VBR, and sends UDP `AudioHeader.encode() + opus` **only
+  frames at 32 kbps VBR (VoIP), and sends UDP `AudioHeader.encode() + opus` **only
   when `is_active()`** (`active_id == my_id`). On `cpal` error it falls back to
   synthetic VU jitter (still sends `VuUpdate` so the UI moves).
 * VU is sent as `VuUpdate {client_id, vu_db}` over TCP; server rebroadcasts it
@@ -124,7 +131,7 @@ myMicRelay.enable = true;
 myMicRelay.role = "server"; # "server" | "client" | "both"
 myMicRelay.server = {
   port = 50051; audioPort = 50052;
-  sourceName = "MicRelay"; # games see MicRelay.monitor
+  sourceName = "MicRelay"; # games see MicRelay (real source), fallback MicRelay.monitor
   openFirewall = true;      # TCP port + UDP audioPort+5353
   mdns = true;
 };
@@ -179,12 +186,14 @@ printf '{"type":"request_active","client_id":""}\n' | nc 192.168.1.92 50051
 
 GUI: Discover finds mDNS peers, otherwise enter `192.168.1.92:50051`.
 **Take Mic** makes you exclusive Active (green banner), **Release** clears it.
-Select **`MicRelay.monitor`** as the mic in the game / Discord / etc. Verify:
+Select **`MicRelay`** (real source, `MicRelayMic` if alt) as the mic in game/Discord; `MicRelay.monitor` still works but is hidden in some pickers. Verify:
 
 ```bash
 pactl list sinks | grep -A2 MicRelay
-pactl list sources | grep MicRelay
-pw-record --target MicRelay.monitor --format f32 /tmp/test.wav  # speak, Ctrl-C, aplay
+pactl list sources | grep MicRelay        # expect MicRelay (MicRelay.monitor also)
+pw-record --target MicRelay --rate 48000 --format s16 --channels 1 /tmp/test.wav  # speak, Ctrl-C, aplay
+# or: pw-record --target MicRelay.monitor --format f32 /tmp/test.wav
+# check routing: pw-link -l | grep MicRelay  # mic-relay:output -> MicRelay:playback, MicRelay:monitor -> input.MicRelay
 ```
 
 Systemd: `systemctl --user status mic-relay-server` on mimosa,
@@ -220,8 +229,8 @@ docker cp tmp:/out/mic-relay.exe ./mic-relay.exe
 docker rm tmp
 ```
 
-`Dockerfile.windows` (`FROM rust:1.82-bookworm`) installs
-`mingw-w64 pkg-config cmake clang libopus-dev`, `cargo install cargo-xwin`,
+`Dockerfile.windows` (`FROM rust:1.89-bookworm`, was 1.82 — 0.23.1 needs >=1.89) installs
+`mingw-w64 pkg-config cmake clang libopus-dev`, `cargo install cargo-xwin --locked || cargo install cargo-xwin --version 0.18.6 --locked`,
 `rustup target add x86_64-pc-windows-gnu`, then
 `cargo build --release --target x86_64-pc-windows-gnu --features client,cli`.
 The exe is at `/out/mic-relay.exe` (also `/mic-relay.exe`). Copy to Windows and
@@ -287,3 +296,9 @@ behind WireGuard/Tailscale and don’t set `openFirewall = true` to WAN.
 * `HelloAck` not sent for 3 s after `Take` – same deadlock.
 * `wayland` `LD_LIBRARY_PATH` wrap for `eframe`, `pactl`/`pw-cli` in `PATH`,
   synthetic VU fallback when `cpal` probe fails.
+* **Speaker not mic**: `cpal` ALSA `default_output_device` fell back to `sink-sunshine-stereo`
+  (`alsa_playback.mic-relay -> sunshine` audible, monitor hidden as `Audio/Sink`) – fixed via
+  null-sink + `module-remap-source` real `Audio/Source` `MicRelay` and `pacat`/`pw-cat` writer (no cpal fallback).
+* **1–2 s lag**: 192 k ring (4 s) + 100 ms default latency + host default cpal buffer → trimmed to
+  8192 ring + 20 ms `pacat`/`pw-cat` latency + `BufferSize::Fixed(960)` + jitter drop >50 ms.
+* **Docker**: `rust:1.82` vs `cargo-xwin 0.23.1 requires 1.89` → bump to `1.89` + fallback install.
