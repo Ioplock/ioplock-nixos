@@ -51,6 +51,8 @@ pub fn spawn_input_capture(
             }
         }
     }
+    // Low-latency: request small buffer (20 ms = 960 frames @48k) instead of host default (often 100+ ms)
+    config.buffer_size = cpal::BufferSize::Fixed(960);
     let sample_rate = config.sample_rate.0;
     let channels = config.channels as usize;
 
@@ -327,19 +329,196 @@ pub fn find_output_device_by_name(substr: &str) -> Option<cpal::Device> {
     None
 }
 
+/// Server-side virtual mic writer — feeds PipeWire/Pulse sink `sink_name`
+/// via `pacat`/`pw-cat` so we never fall back to the default speaker.
+/// Uses a small 8192-sample ring (~170 ms @48k) and 20 ms latency to keep
+/// delay <100 ms instead of the old 4-second cpal ring (main 1-2 s lag).
+#[cfg(feature = "server")]
+pub fn spawn_virtual_mic_writer(
+    sink_name: &str,
+) -> Result<Arc<Mutex<rtrb::Producer<f32>>>> {
+    // Small ring — old size 48000*4 = 192k ≈4 s, capped latency was 1-2 s.
+    // Now 8192 ≈170 ms max, and we actively trim >50 ms (2400 samples).
+    let (prod, cons) = rtrb::RingBuffer::<f32>::new(8192);
+    let cons = Arc::new(Mutex::new(cons));
+    let prod_arc = Arc::new(Mutex::new(prod));
+    let ret = prod_arc.clone();
+    let sink = sink_name.to_string();
+    let cons_thread = cons.clone();
+    std::thread::spawn(move || {
+        virtual_mic_writer_thread(sink, cons_thread);
+    });
+    // Give writer a moment to spawn pacat/pw-cat
+    info!(sink=%sink_name, "virtual mic pulse writer started (ring 8192, latency 20ms)");
+    Ok(ret)
+}
+
+#[cfg(feature = "server")]
+fn spawn_pacat_child(sink: &str) -> std::io::Result<std::process::Child> {
+    // Prefer pacat (PulseAudio compat, always present when pipewire-pulse is enabled)
+    // Use float32le mono 48k, low latency 20 ms, raw. Fallback to pw-cat below.
+    std::process::Command::new("pacat")
+        .args([
+            "-p",
+            "--raw",
+            &format!("--device={sink}"),
+            "--rate=48000",
+            "--format=float32le",
+            "--channels=1",
+            "--latency-msec=20",
+            "--client-name=mic-relay",
+            "--stream-name=MicRelay",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+}
+
+#[cfg(feature = "server")]
+fn spawn_pwcat_child(sink: &str) -> std::io::Result<std::process::Child> {
+    std::process::Command::new("pw-cat")
+        .args([
+            "-p",
+            "--target",
+            sink,
+            "--rate",
+            "48000",
+            "--channels",
+            "1",
+            "--format",
+            "f32",
+            "--latency",
+            "20ms",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+}
+
+#[cfg(feature = "server")]
+fn virtual_mic_writer_thread(sink: String, cons: Arc<Mutex<rtrb::Consumer<f32>>>) {
+    use std::io::Write;
+    loop {
+        let mut child = match spawn_pacat_child(&sink) {
+            Ok(c) => {
+                info!(sink=%sink, via="pacat", "spawned pulse writer");
+                c
+            }
+            Err(e) => {
+                warn!(sink=%sink, error=%e, "pacat spawn failed, trying pw-cat");
+                match spawn_pwcat_child(&sink) {
+                    Ok(c) => {
+                        info!(sink=%sink, via="pw-cat", "spawned pw-cat writer");
+                        c
+                    }
+                    Err(e2) => {
+                        warn!(sink=%sink, error=%e2, "both pacat and pw-cat failed — retry in 1s (is pipewire installed?)");
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        continue;
+                    }
+                }
+            }
+        };
+        let mut stdin = match child.stdin.take() {
+            Some(s) => s,
+            None => {
+                warn!(sink=%sink, "failed to take writer stdin, restarting");
+                let _ = child.kill();
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                continue;
+            }
+        };
+        // Drain ring -> stdin (f32le mono)
+        let mut tmp = Vec::<u8>::with_capacity(960 * 4);
+        let mut consecutive_empty = 0usize;
+        loop {
+            // Jitter handling: keep latency <50 ms (2400 samples). Consumer::slots() = occupied items.
+            {
+                let mut c = cons.lock().unwrap();
+                let occupied = c.slots(); // items available to read
+                if occupied > 2400 {
+                    // drop oldest 480 samples (~10 ms) to catch up
+                    for _ in 0..480 {
+                        let _ = c.pop();
+                    }
+                    if occupied > 4000 {
+                        // severe backlog, drop another 960
+                        for _ in 0..960 {
+                            let _ = c.pop();
+                        }
+                    }
+                }
+                // Drain up to 960 samples per write burst (20 ms)
+                tmp.clear();
+                for _ in 0..960 {
+                    if let Ok(v) = c.pop() {
+                        tmp.extend_from_slice(&v.to_le_bytes());
+                        consecutive_empty = 0;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if tmp.is_empty() {
+                consecutive_empty += 1;
+                // No data: write silence after 50ms of empty to keep pacat alive and avoid underrun?
+                // Instead just sleep 2ms (48000/512 ≈ 10ms period). Busy-wait is fine.
+                if consecutive_empty > 50 {
+                    // periodic silence keepalive: send 480 samples silence
+                    let silence = [0u8; 480 * 4];
+                    if stdin.write_all(&silence).is_err() {
+                        warn!(sink=%sink, "pulse writer stdin broken (silence), restarting");
+                        break;
+                    }
+                    let _ = stdin.flush();
+                    consecutive_empty = 0;
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                // Check child still alive
+                if let Ok(Some(status)) = child.try_wait() {
+                    warn!(sink=%sink, status=%status, "pulse writer exited, restarting");
+                    break;
+                }
+                continue;
+            }
+            if let Err(e) = stdin.write_all(&tmp) {
+                warn!(sink=%sink, error=%e, "pulse writer write failed, restarting child");
+                break;
+            }
+            if stdin.flush().is_err() {
+                warn!(sink=%sink, "pulse writer flush failed, restarting");
+                break;
+            }
+            if let Ok(Some(status)) = child.try_wait() {
+                warn!(sink=%sink, status=%status, "pulse writer died during write, restarting");
+                break;
+            }
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
+/// Legacy cpal fallback — kept for debugging, but server now uses pulse writer.
+/// Do NOT call this on PipeWire; it falls back to default sink (audible speakers).
 #[cfg(any(feature = "client", feature = "server"))]
 pub fn spawn_output_playback(
     source_name: &str,
 ) -> Result<(cpal::Stream, rtrb::Producer<f32>)> {
     let host = cpal::default_host();
-    let device = find_output_device_by_name(source_name)
-        .or_else(|| host.default_output_device())
-        .context("no output device for playback")?;
+    // Strict: no fallback to default — caller must handle pulse path instead
+    let device = find_output_device_by_name(source_name).context(format!(
+        "no cpal output device matching '{source_name}' — use pulse writer instead (see spawn_virtual_mic_writer)"
+    ))?;
     let dev_name = device.name().unwrap_or_else(|_| "unknown".into());
-    info!(device=%dev_name, source=%source_name, "starting cpal output to virtual sink");
+    info!(device=%dev_name, source=%source_name, "starting cpal output (legacy path)");
     let config = device.default_output_config().context("default output config")?;
     let channels = config.channels() as usize;
-    let (prod, cons) = rtrb::RingBuffer::<f32>::new(48000 * 4);
+    let (prod, cons) = rtrb::RingBuffer::<f32>::new(8192);
     let cons = Arc::new(Mutex::new(cons));
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => device.build_output_stream(

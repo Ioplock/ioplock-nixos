@@ -76,19 +76,28 @@ pub async fn run(control_port: u16, audio_port: u16, source_name: String) -> Res
         }
     };
 
-    // Playback to virtual sink (MicRelay) — keep stream alive
+    // Playback to virtual mic — via Pulse/pw-cat writer (never via cpal default sink,
+    // which was routing mic to speakers/sunshine sink). Small ring + 20 ms latency.
     let playback_prod: std::sync::Arc<std::sync::Mutex<rtrb::Producer<f32>>> = {
-        match audio::spawn_output_playback(&source_name) {
-            Ok((stream, prod)) => {
-                info!(source=%source_name, "playback stream to virtual sink ready");
-                // Keep stream alive for the lifetime of the server
-                std::mem::forget(stream);
-                std::sync::Arc::new(std::sync::Mutex::new(prod))
+        match audio::spawn_virtual_mic_writer(&source_name) {
+            Ok(prod_arc) => {
+                info!(source=%source_name, "pulse writer to virtual mic ready (sink -> remapped source)");
+                prod_arc
             }
             Err(e) => {
-                warn!(error=%e, source=%source_name, "playback failed — audio will be decoded but not played");
-                let (prod, _cons) = rtrb::RingBuffer::new(1024);
-                std::sync::Arc::new(std::sync::Mutex::new(prod))
+                warn!(error=%e, source=%source_name, "pulse writer failed — trying legacy cpal path (will NOT fallback to default)");
+                match audio::spawn_output_playback(&source_name) {
+                    Ok((stream, prod)) => {
+                        info!(source=%source_name, "legacy cpal stream ready (strict, no default fallback)");
+                        std::mem::forget(stream);
+                        std::sync::Arc::new(std::sync::Mutex::new(prod))
+                    }
+                    Err(e2) => {
+                        warn!(error=%e2, source=%source_name, "all playback backends failed — audio will be decoded but not played");
+                        let (prod, _cons) = rtrb::RingBuffer::new(1024);
+                        std::sync::Arc::new(std::sync::Mutex::new(prod))
+                    }
+                }
             }
         }
     };
@@ -124,48 +133,172 @@ pub async fn run(control_port: u16, audio_port: u16, source_name: String) -> Res
 }
 
 async fn ensure_virtual_source(source_name: &str) -> bool {
-    // Create a null sink whose monitor is usable as a mic.
-    // `pactl load-module module-null-sink sink_name=... sink_properties=device.description=...`
-    // The monitor source will be `<sink_name>.monitor` — games select that.
-    // We try pactl first, then pw-cli fallback.
+    // We need a real Audio/Source that games see as a mic — NOT just the null-sink's
+    // monitor (media.class Audio/Sink, `MicRelay.monitor`) which many apps hide and
+    // which cpal's ALSA layer routes to the default speaker (audible speakers bug).
+    // Steps:
+    // 1) Ensure null-sink `MicRelay` exists (its monitor is MicRelay.monitor).
+    // 2) Create a remapped source `MicRelay` (or `MicRelayMic` if name collides)
+    //    via `module-remap-source master=MicRelay.monitor`. That source is
+    //    Audio/Source, appears in `wpctl status Sources` / pactl sources, and is
+    //    what games should select. Playback then goes via pacat/pw-cat to the sink
+    //    (not cpal default), so it never becomes audible.
     let sink = source_name;
-    let desc = format!("MicRelay virtual mic ({sink})");
-    let try_pactl = tokio::process::Command::new("pactl")
-        .args([
-            "load-module",
-            "module-null-sink",
-            &format!("sink_name={sink}"),
-            &format!("sink_properties=device.description=\"{desc}\""),
-        ])
-        .output()
-        .await;
-    match try_pactl {
-        Ok(o) if o.status.success() => {
-            info!(sink, id=%String::from_utf8_lossy(&o.stdout).trim(), "created null sink");
-            return true;
+
+    // --- 1) null-sink ---
+    let sink_exists = {
+        let out = tokio::process::Command::new("pactl")
+            .args(["list", "sinks", "short"])
+            .output()
+            .await;
+        match out {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                stdout.lines().any(|l| l.split_whitespace().nth(1) == Some(sink))
+            }
+            Err(_) => false,
         }
-        Ok(o) => warn!(sink, stderr=%String::from_utf8_lossy(&o.stderr), "pactl null-sink failed"),
-        Err(e) => warn!(sink, error=%e, "pactl not found"),
+    };
+    if sink_exists {
+        info!(sink, "sink already exists");
+    } else {
+        let desc = format!("MicRelay virtual mic ({sink})");
+        let try_pactl = tokio::process::Command::new("pactl")
+            .args([
+                "load-module",
+                "module-null-sink",
+                &format!("sink_name={sink}"),
+                &format!("sink_properties=device.description=\"{desc}\""),
+            ])
+            .output()
+            .await;
+        match try_pactl {
+            Ok(o) if o.status.success() => {
+                info!(sink, id=%String::from_utf8_lossy(&o.stdout).trim(), "created null sink");
+            }
+            Ok(o) => {
+                warn!(sink, stderr=%String::from_utf8_lossy(&o.stderr), "pactl null-sink failed, trying pw-cli");
+                let pw = tokio::process::Command::new("pw-cli")
+                    .args(["create", "node", "adapter", &format!("{{ factory.name=support.null-audio-sink node.name={sink} media.class=Audio/Sink }}")])
+                    .output()
+                    .await;
+                match pw {
+                    Ok(o2) if o2.status.success() => info!(sink, "created via pw-cli"),
+                    Ok(o2) => {
+                        warn!(sink, stderr=%String::from_utf8_lossy(&o2.stderr), "pw-cli failed");
+                        return false;
+                    }
+                    Err(e) => {
+                        warn!(sink, error=%e, "pw-cli not found");
+                        return false;
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(sink, error=%e, "pactl not found, trying pw-cli");
+                let pw = tokio::process::Command::new("pw-cli")
+                    .args(["create", "node", "adapter", &format!("{{ factory.name=support.null-audio-sink node.name={sink} media.class=Audio/Sink }}")])
+                    .output()
+                    .await;
+                match pw {
+                    Ok(o2) if o2.status.success() => info!(sink, "created via pw-cli"),
+                    _ => return false,
+                }
+            }
+        }
+        // Small wait for sink to appear
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
-    // fallback: pw-cli (pipewire)
-    let pw = tokio::process::Command::new("pw-cli")
-        .args(["create", "node", "adapter", &format!("{{ factory.name=support.null-audio-sink node.name={sink} media.class=Audio/Sink }}")])
-        .output()
-        .await;
-    match pw {
-        Ok(o) if o.status.success() => {
-            info!(sink, "created via pw-cli");
-            true
-        }
-        Ok(o) => {
-            warn!(sink, stderr=%String::from_utf8_lossy(&o.stderr), "pw-cli failed");
-            false
-        }
-        Err(e) => {
-            warn!(sink, error=%e, "pw-cli not found");
-            false
+
+    // --- 2) remapped source (real mic) ---
+    // Check if a non-monitor source with our desired name already exists.
+    let source_candidate = sink.to_string(); // try exact name first
+    let alt_source = format!("{sink}Mic");
+    // Helper to check real source exists (not monitor)
+    async fn source_exists(name: &str) -> bool {
+        let out = tokio::process::Command::new("pactl")
+            .args(["list", "sources", "short"])
+            .output()
+            .await;
+        match out {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                stdout.lines().any(|l| {
+                    let parts: Vec<&str> = l.split_whitespace().collect();
+                    parts.get(1) == Some(&name) && !name.ends_with(".monitor")
+                })
+            }
+            Err(_) => false,
         }
     }
+    // If sink == source name collides (Pulse allows same string for sink vs source,
+    // but PipeWire via pactl may reject), we will fallback to alt.
+    if source_exists(&source_candidate).await {
+        info!(source=%source_candidate, "virtual source already exists");
+        return true;
+    }
+    if source_exists(&alt_source).await {
+        info!(source=%alt_source, "virtual source already exists (alt name)");
+        return true;
+    }
+    let mut final_source: String;
+
+    // Try to create remapped source: prefer exact name, fallback to alt
+    for try_name in [source_candidate.clone(), alt_source.clone()] {
+        let out = tokio::process::Command::new("pactl")
+            .args([
+                "load-module",
+                "module-remap-source",
+                &format!("master={sink}.monitor"),
+                &format!("source_name={try_name}"),
+                &format!("source_properties=device.description=\"{try_name} virtual mic\""),
+            ])
+            .output()
+            .await;
+        match out {
+            Ok(o) if o.status.success() => {
+                let id = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                info!(source=%try_name, master=%format!("{sink}.monitor"), id=%id, "created remapped source (real mic)");
+                // Verify
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                if source_exists(&try_name).await {
+                    if try_name != source_candidate {
+                        warn!(source=%try_name, wanted=%source_candidate, "created alt source — select this in games (PipeWire disallows same name as sink)");
+                    }
+                    final_source = try_name;
+                    // Also try to set default source to it (best-effort)
+                    let _ = tokio::process::Command::new("pactl")
+                        .args(["set-default-source", &final_source])
+                        .output()
+                        .await;
+                    return true;
+                }
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+                warn!(source=%try_name, stderr=%stderr, "remap-source failed, trying next name");
+                // If error is about already exists, consider it success
+                if stderr.contains("already exists") || stderr.contains("Name already") {
+                    return true;
+                }
+            }
+            Err(e) => warn!(source=%try_name, error=%e, "pactl not found for remap"),
+        }
+    }
+    // If remap failed, at least the sink+monitor exists — still usable but hidden in some UIs.
+    // Report sink ok but warn.
+    warn!(sink=%sink, "remapped source creation failed — fallback to sink monitor {}.monitor (some games hide monitors)", sink);
+    // Consider sink alone as half-success: playback will still work via pacat to sink,
+    // but user must select .monitor and it may not appear in all apps.
+    // Check sink still exists.
+    let sink_ok = {
+        let out = tokio::process::Command::new("pactl")
+            .args(["list", "sinks", "short"])
+            .output()
+            .await;
+        matches!(out, Ok(o) if String::from_utf8_lossy(&o.stdout).contains(sink))
+    };
+    sink_ok
 }
 
 async fn audio_loop(
