@@ -278,20 +278,31 @@ pub fn run_gui(server: String, name: String) -> Result<()> {
                     });
                 });
 
-            // Clients list — handle overflow: use Grid-like rows with available_width
+            // Clients list — peers only (self shown in "You" card). Avoids duplicate-self bug
+            // where server had stale entry with same name+IP; filtering here hides self from list.
+            let peers: Vec<ClientInfo> = st
+                .clients
+                .iter()
+                .filter(|c| Some(&c.id) != st.my_id.as_ref())
+                .cloned()
+                .collect();
             ui.add_space(4.0);
             ui.label(
-                egui::RichText::new(format!("Clients ({})", st.clients.len()))
+                egui::RichText::new(format!("Clients ({})", peers.len()))
                     .weak()
                     .small(),
             );
             egui::ScrollArea::vertical()
                 .max_height(160.0)
                 .show(ui, |ui| {
-                    if st.clients.is_empty() {
-                        ui.weak("No clients yet — waiting for server ClientList…");
+                    if peers.is_empty() {
+                        if st.clients.is_empty() {
+                            ui.weak("No clients yet — waiting for server ClientList…");
+                        } else {
+                            ui.weak("No other clients — only you are connected");
+                        }
                     } else {
-                        for c in &st.clients {
+                        for c in &peers {
                             let is_active = Some(&c.id) == st.active_id.as_ref();
                             let is_me = Some(&c.id) == st.my_id.as_ref();
                             let fill = if is_active {
@@ -431,43 +442,113 @@ async fn network_task(
     let mut line = String::new();
 
     // HelloAck
-    reader.read_line(&mut line).await?;
+    let n = reader.read_line(&mut line).await?;
+    if n == 0 {
+        anyhow::bail!("server closed before HelloAck");
+    }
+    info!(line=%line.trim(), "got hello ack raw");
     let ack: ControlMessage =
         serde_json::from_str(line.trim()).unwrap_or(ControlMessage::Error { message: "bad ack".into() });
     if let ControlMessage::HelloAck { assigned_id } = ack {
+        info!(assigned_id=%assigned_id, "hello ack");
         state.lock().unwrap().my_id = Some(assigned_id);
+    } else {
+        warn!(?ack, "unexpected first message, expected HelloAck");
     }
     line.clear();
 
-    // VU sender — now via control channel
-    let vu_state = state.clone();
-    let vu_tx = tx.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(300));
-        let mut last_vu: f32 = -100.0;
-        loop {
-            interval.tick().await;
-            let (my_id, vu_db) = {
-                let s = vu_state.lock().unwrap();
-                (s.my_id.clone(), s.vu_db)
-            };
-            if let Some(id) = my_id {
-                // Smooth synthetic VU for now (real cpal later)
-                // Add small jitter + smoothing to avoid jumping
-                let jitter = (rand_simple() % 7) as f32 - 3.0;
-                let target = -24.0 + jitter; // centered around -24 dB
-                // Smooth towards target
-                let smoothed = last_vu * 0.7 + target * 0.3;
-                last_vu = smoothed;
-                // Update local state
-                vu_state.lock().unwrap().vu_db = smoothed;
-                let _ = vu_tx.send(ControlMessage::VuUpdate {
+    // Spawn real cpal capture without blocking the network reader.
+    // Previous version blocked network_task while probing cpal, delaying the initial ClientList read
+    // and causing "connected but no client list" on fast reconnect.
+    {
+        let state_for_hash = state.clone();
+        let hash_fn = move || {
+            state_for_hash
+                .lock()
+                .unwrap()
+                .my_id
+                .as_ref()
+                .map(|id| crate::protocol::hash_client_id(id))
+                .unwrap_or(0)
+        };
+        let server_for_audio = server.clone();
+        let state_for_active = state.clone();
+        let state_for_vu = state.clone();
+        let tx_for_vu = tx.clone();
+        let audio_addr = {
+            let ip = server_for_audio.split(':').next().unwrap_or("192.168.1.92");
+            format!("{ip}:50052")
+        };
+        let is_active = move || {
+            let s = state_for_active.lock().unwrap();
+            s.active_id.is_some() && s.active_id == s.my_id
+        };
+        let vu_cb = move |db: f32| {
+            state_for_vu.lock().unwrap().vu_db = db;
+            if let Some(id) = state_for_vu.lock().unwrap().my_id.clone() {
+                let _ = tx_for_vu.send(ControlMessage::VuUpdate {
                     client_id: id,
-                    vu_db: smoothed,
+                    vu_db: db,
                 });
             }
-        }
-    });
+        };
+        // Offload cpal probing to blocking pool so ClientList is not delayed
+        let state_clone = state.clone();
+        let tx_clone = tx.clone();
+        tokio::task::spawn_blocking(move || {
+            match crate::audio::spawn_input_capture(hash_fn, audio_addr.clone(), is_active, vu_cb) {
+                Ok(_stream) => {
+                    std::mem::forget(_stream);
+                    info!("real mic capture started");
+                }
+                Err(e) => {
+                    warn!(error=%e, "real capture failed, falling back to synthetic VU");
+                    // Synthetic fallback needs tokio runtime, so spawn it back on async
+                    let vu_state = state_clone.clone();
+                    let vu_tx = tx_clone.clone();
+                    tokio::spawn(async move {
+                        let mut interval = tokio::time::interval(std::time::Duration::from_millis(300));
+                        let mut last_vu: f32 = -100.0;
+                        loop {
+                            interval.tick().await;
+                            let my_id = vu_state.lock().unwrap().my_id.clone();
+                            if let Some(id) = my_id {
+                                let jitter = (rand_simple() % 7) as f32 - 3.0;
+                                let target = -24.0 + jitter;
+                                let smoothed = last_vu * 0.7 + target * 0.3;
+                                last_vu = smoothed;
+                                vu_state.lock().unwrap().vu_db = smoothed;
+                                let _ = vu_tx.send(ControlMessage::VuUpdate {
+                                    client_id: id,
+                                    vu_db: smoothed,
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+        });
+        // If after 800ms we still have no ClientList, nudge server with Ping (which now rebroadcasts list)
+        let ping_state = state.clone();
+        let ping_tx = tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            let need_ping = {
+                let s = ping_state.lock().unwrap();
+                s.clients.is_empty()
+            };
+            if need_ping {
+                warn!("no ClientList after 800ms, sending Ping to request list");
+                let _ = ping_tx.send(ControlMessage::Ping);
+                // second retry after another 800ms
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                let still_empty = ping_state.lock().unwrap().clients.is_empty();
+                if still_empty {
+                    warn!("still no ClientList after Ping, will stay in 'connected to' state until server push");
+                }
+            }
+        });
+    }
 
     // Writer task: forwards channel messages to TCP
     let mut w2 = w;

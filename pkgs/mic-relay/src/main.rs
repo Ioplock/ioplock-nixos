@@ -4,6 +4,8 @@ mod mdns;
 mod protocol;
 mod server;
 
+mod audio;
+
 #[cfg(feature = "client")]
 mod gui;
 mod client;

@@ -9,6 +9,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 
+use crate::audio;
 use crate::mdns::MdnsPublisher;
 use crate::protocol::*;
 
@@ -75,11 +76,30 @@ pub async fn run(control_port: u16, audio_port: u16, source_name: String) -> Res
         }
     };
 
+    // Playback to virtual sink (MicRelay) — keep stream alive
+    let playback_prod: std::sync::Arc<std::sync::Mutex<rtrb::Producer<f32>>> = {
+        match audio::spawn_output_playback(&source_name) {
+            Ok((stream, prod)) => {
+                info!(source=%source_name, "playback stream to virtual sink ready");
+                // Keep stream alive for the lifetime of the server
+                std::mem::forget(stream);
+                std::sync::Arc::new(std::sync::Mutex::new(prod))
+            }
+            Err(e) => {
+                warn!(error=%e, source=%source_name, "playback failed — audio will be decoded but not played");
+                let (prod, _cons) = rtrb::RingBuffer::new(1024);
+                std::sync::Arc::new(std::sync::Mutex::new(prod))
+            }
+        }
+    };
+
     // UDP audio task — receives Opus frames, forwards only from active client to virtual sink
     let audio_state = state.clone();
     let audio_bcast = bcast_tx.clone();
+    let prod_clone = playback_prod.clone();
+    let src_clone = source_name.clone();
     tokio::spawn(async move {
-        if let Err(e) = audio_loop(audio_port, audio_state, audio_bcast, source_name).await {
+        if let Err(e) = audio_loop(audio_port, audio_state, audio_bcast, src_clone, prod_clone).await {
             warn!(error=%e, "audio loop exited");
         }
     });
@@ -153,12 +173,10 @@ async fn audio_loop(
     state: Arc<RwLock<ServerState>>,
     _bcast: broadcast::Sender<ControlMessage>,
     source_name: String,
+    prod: std::sync::Arc<std::sync::Mutex<rtrb::Producer<f32>>>,
 ) -> Result<()> {
     let sock = UdpSocket::bind(("0.0.0.0", port)).await?;
     let mut buf = vec![0u8; 8192];
-    // For now we just validate framing and optionally forward to the null sink via cpal/pw-play.
-    // Minimal: count packets, update VU if we can decode level, but don't require opus yet.
-    // If opus feature is enabled, decode and play.
     #[cfg(feature = "opus")]
     let mut decoders: HashMap<u32, opus::Decoder> = HashMap::new();
 
@@ -179,18 +197,14 @@ async fn audio_loop(
             s.active_id.as_ref().map(|id| hash_client_id(id))
         };
         if active_hash != Some(hdr.client_id_hash) {
-            // Not active — drop. Still could update VU for that client via control channel instead.
             continue;
         }
 
-        // Optional: decode Opus and play to the virtual sink.
-        // We do best-effort; if payload is raw PCM f32 (no opus) we could also handle it.
         #[cfg(feature = "opus")]
         {
             let decoder = decoders.entry(hdr.client_id_hash).or_insert_with(|| {
                 opus::Decoder::new(48000, opus::Channels::Mono).expect("opus decoder")
             });
-            // Opus frame is 20ms @ 48kHz mono = 960 samples
             let mut pcm = vec![0i16; 960 * 2];
             let decoded = match decoder.decode(payload, &mut pcm, false) {
                 Ok(n) => n,
@@ -200,11 +214,16 @@ async fn audio_loop(
                 }
             };
             pcm.truncate(decoded);
-            // Write to virtual sink via cpal/pw-cat. For now we drop after decode to avoid extra deps.
-            // A full impl would open a cpal output stream targeting `source_name` device and write `pcm`.
-            // Placeholder: log occasionally
-            if hdr.seq % 100 == 0 {
-                info!(seq=hdr.seq, samples=decoded, sink=%source_name, "forwarded opus frame from active");
+            // Push decoded f32 mono to ring buffer for cpal playback
+            if let Ok(mut p) = prod.lock() {
+                for s in pcm.iter() {
+                    let f = *s as f32 / 32768.0;
+                    // If ring full, newest sample is dropped (Producer::push fails). That's acceptable for low-latency.
+                    let _ = p.push(f);
+                }
+            }
+            if hdr.seq % 200 == 0 {
+                info!(seq=hdr.seq, samples=decoded, sink=%source_name, "decoded+queued opus frame");
             }
         }
         #[cfg(not(feature = "opus"))]
@@ -244,6 +263,25 @@ async fn handle_client(
 
     {
         let mut s = state.write().await;
+        // Deduplicate stale entries from same host (same name+IP) that may linger after abrupt close.
+        // Without this, a quick reconnect creates a duplicate "you" entry (user reported bug).
+        let dup_keys: Vec<String> = s
+            .clients
+            .iter()
+            .filter(|(_, rec)| rec.info.name == name && rec.addr.ip() == addr.ip())
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in dup_keys {
+            if k != client_id {
+                info!(%k, %name, %addr, "removing stale duplicate for same host before insert");
+                s.clients.remove(&k);
+                if s.active_id.as_ref() == Some(&k) {
+                    s.active_id = None;
+                }
+            }
+        }
+        // Also handle case where client provided an explicit id that already exists (reconnect with same id)
+        // — then we will overwrite it below, but ensure stale port mapping is updated.
         let rec = ClientRecord {
             info: ClientInfo {
                 id: client_id.clone(),
@@ -256,27 +294,32 @@ async fn handle_client(
             addr,
         };
         s.clients.insert(client_id.clone(), rec);
-        if s.active_id.is_none() {
-            // First client becomes active automatically; otherwise requires explicit take.
-            // Keep None until someone takes to avoid surprise.
-        }
     }
 
     // Ack
     let ack = ControlMessage::HelloAck {
         assigned_id: client_id.clone(),
     };
+    info!(%client_id, "sending HelloAck");
     w.write_all((serde_json::to_string(&ack)? + "\n").as_bytes()).await?;
+    w.flush().await?;
+    info!(%client_id, "HelloAck sent");
 
     // Send initial list
     {
         let s = state.read().await;
         let (clients, active_id) = s.snapshot();
+        let n = clients.len();
         let msg = ControlMessage::ClientList { clients, active_id };
+        info!(%client_id, n, "sending initial ClientList");
         w.write_all((serde_json::to_string(&msg)? + "\n").as_bytes()).await?;
+        w.flush().await?;
+        info!(%client_id, "initial ClientList sent");
     }
     // Broadcast new list to everyone
+    info!(%client_id, "broadcasting list");
     broadcast_list(&state, &bcast_tx).await;
+    info!(%client_id, "broadcast done");
 
     // Spawn writer for broadcasts
     let mut w2 = w;
@@ -304,31 +347,44 @@ async fn handle_client(
                 let msg: Result<ControlMessage, _> = serde_json::from_str(line.trim());
                 match msg {
                     Ok(ControlMessage::RequestActive { client_id: req }) => {
-                        let mut s = state.write().await;
-                        if req.is_empty() {
-                            // Release: clear active
-                            if s.active_id.is_some() {
-                                s.active_id = None;
-                                for rec in s.clients.values_mut() {
-                                    if rec.info.state == ClientState::Active {
-                                        rec.info.state = ClientState::Connected;
+                        // Avoid deadlock: do not hold write lock across broadcast_list (which needs read lock)
+                        let (do_broadcast, active_changed) = {
+                            let mut s = state.write().await;
+                            if req.is_empty() {
+                                info!(%cid_clone, "release requested");
+                                if s.active_id.is_some() {
+                                    let prev = s.active_id.clone();
+                                    s.active_id = None;
+                                    for rec in s.clients.values_mut() {
+                                        if rec.info.state == ClientState::Active {
+                                            rec.info.state = ClientState::Connected;
+                                        }
                                     }
+                                    info!(prev=?prev, "active cleared");
+                                    (true, Some(ControlMessage::ActiveChanged { active_id: None, active_name: None }))
+                                } else {
+                                    info!("release requested but no active holder");
+                                    (false, None)
                                 }
-                                let _ = bcast_tx.send(ControlMessage::ActiveChanged {
-                                    active_id: None,
-                                    active_name: None,
-                                });
-                                broadcast_list(&state, &bcast_tx).await;
+                            } else if s.clients.contains_key(&req) {
+                                info!(%cid_clone, req=%req, "take requested");
+                                s.active_id = Some(req.clone());
+                                let active_clone = s.active_id.clone();
+                                for (id, rec) in s.clients.iter_mut() {
+                                    rec.info.state = if Some(id) == active_clone.as_ref() { ClientState::Active } else { ClientState::Connected };
+                                }
+                                let active_name = s.clients.get(&req).map(|r| r.info.name.clone());
+                                info!(active=?active_clone, name=?active_name, "active set");
+                                (true, Some(ControlMessage::ActiveChanged { active_id: Some(req.clone()), active_name }))
+                            } else {
+                                warn!(%cid_clone, req=%req, "take requested for unknown client");
+                                (false, None)
                             }
-                        } else if s.clients.contains_key(&req) {
-                            s.active_id = Some(req.clone());
-                            let active_clone = s.active_id.clone();
-                            // mark states
-                            for (id, rec) in s.clients.iter_mut() {
-                                rec.info.state = if Some(id) == active_clone.as_ref() { ClientState::Active } else { ClientState::Connected };
-                            }
-                            let active_name = s.clients.get(&req).map(|r| r.info.name.clone());
-                            let _ = bcast_tx.send(ControlMessage::ActiveChanged { active_id: Some(req), active_name });
+                        };
+                        if let Some(msg) = active_changed {
+                            let _ = bcast_tx.send(msg);
+                        }
+                        if do_broadcast {
                             broadcast_list(&state, &bcast_tx).await;
                         }
                     }
@@ -346,28 +402,38 @@ async fn handle_client(
                         });
                     }
                     Ok(ControlMessage::Mute { client_id: mid, muted }) => {
-                        let mut s = state.write().await;
-                        if let Some(rec) = s.clients.get_mut(&mid) {
-                            rec.info.state = if muted { ClientState::Muted } else { ClientState::Connected };
-                            if muted && s.active_id.as_ref() == Some(&mid) {
+                        let need_broadcast = {
+                            let mut s = state.write().await;
+                            let mut need = false;
+                            if let Some(rec) = s.clients.get_mut(&mid) {
+                                rec.info.state = if muted { ClientState::Muted } else { ClientState::Connected };
+                                if muted && s.active_id.as_ref() == Some(&mid) {
+                                    s.active_id = None;
+                                    let _ = bcast_tx.send(ControlMessage::ActiveChanged { active_id: None, active_name: None });
+                                }
+                                need = true;
+                            }
+                            need
+                        };
+                        if need_broadcast {
+                            broadcast_list(&state, &bcast_tx).await;
+                        }
+                    }
+                    Ok(ControlMessage::Kick { client_id: kid }) => {
+                        {
+                            let mut s = state.write().await;
+                            s.clients.remove(&kid);
+                            if s.active_id.as_ref() == Some(&kid) {
                                 s.active_id = None;
                                 let _ = bcast_tx.send(ControlMessage::ActiveChanged { active_id: None, active_name: None });
                             }
                         }
                         broadcast_list(&state, &bcast_tx).await;
                     }
-                    Ok(ControlMessage::Kick { client_id: kid }) => {
-                        // Only server operator should kick; for now allow any client to kick (LAN trust).
-                        let mut s = state.write().await;
-                        s.clients.remove(&kid);
-                        if s.active_id.as_ref() == Some(&kid) {
-                            s.active_id = None;
-                            let _ = bcast_tx.send(ControlMessage::ActiveChanged { active_id: None, active_name: None });
-                        }
-                        broadcast_list(&state, &bcast_tx).await;
-                    }
                     Ok(ControlMessage::Ping) => {
                         let _ = bcast_tx.send(ControlMessage::Pong);
+                        // Also rebroadcast current list — helps clients that missed initial ClientList after reconnect
+                        broadcast_list(&state, &bcast_tx).await;
                     }
                     Ok(_) => {}
                     Err(e) => warn!(%cid_clone, error=%e, line=%line.trim(), "bad control msg"),

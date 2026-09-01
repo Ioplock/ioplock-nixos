@@ -178,6 +178,7 @@
       ];
       serverBuildInputs = with pkgs; [
         opus
+        alsa-lib
       ];
     in
     {
