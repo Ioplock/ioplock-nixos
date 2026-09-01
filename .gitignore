@@ -1,4 +1,5 @@
 temp/
 *.code-workspace
 result
+result-win
 pkgs/mic-relay/target/
