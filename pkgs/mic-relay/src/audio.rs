@@ -333,7 +333,7 @@ pub fn find_output_device_by_name(substr: &str) -> Option<cpal::Device> {
 /// via `pacat`/`pw-cat` so we never fall back to the default speaker.
 /// Uses a small 8192-sample ring (~170 ms @48k) and 20 ms latency to keep
 /// delay <100 ms instead of the old 4-second cpal ring (main 1-2 s lag).
-#[cfg(feature = "server")]
+#[cfg(any(feature = "client", feature = "server"))]
 pub fn spawn_virtual_mic_writer(
     sink_name: &str,
 ) -> Result<Arc<Mutex<rtrb::Producer<f32>>>> {
@@ -353,7 +353,7 @@ pub fn spawn_virtual_mic_writer(
     Ok(ret)
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "client", feature = "server"))]
 fn spawn_pacat_child(sink: &str) -> std::io::Result<std::process::Child> {
     // Prefer pacat (PulseAudio compat, always present when pipewire-pulse is enabled)
     // Use float32le mono 48k, low latency 20 ms, raw. Fallback to pw-cat below.
@@ -375,7 +375,7 @@ fn spawn_pacat_child(sink: &str) -> std::io::Result<std::process::Child> {
         .spawn()
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "client", feature = "server"))]
 fn spawn_pwcat_child(sink: &str) -> std::io::Result<std::process::Child> {
     std::process::Command::new("pw-cat")
         .args([
@@ -397,7 +397,7 @@ fn spawn_pwcat_child(sink: &str) -> std::io::Result<std::process::Child> {
         .spawn()
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "client", feature = "server"))]
 fn virtual_mic_writer_thread(sink: String, cons: Arc<Mutex<rtrb::Consumer<f32>>>) {
     use std::io::Write;
     loop {

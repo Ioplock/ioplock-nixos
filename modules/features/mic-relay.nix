@@ -238,24 +238,25 @@
         };
       };
 
-      # Windows cross via mingw — best-effort. Requires wine for tests disabled.
-      # Users can also use the Docker builder below which is more reliable for WASAPI/opus.
+      # Windows cross via mingw — best-effort (Docker is reliable fallback).
+      # Requires cmake for audiopus_sys (Opus) + policy workaround for CMake 4.
       packages.myMicRelayWindowsCross = pkgs.pkgsCross.mingwW64.rustPlatform.buildRustPackage {
         pname = "mic-relay-windows";
         version = "0.1.0";
         src = micRelaySrc;
         cargoLock.lockFile = micRelaySrc + "/Cargo.lock";
-        nativeBuildInputs = nativeCommon;
+        nativeBuildInputs = nativeCommon ++ [ pkgs.cmake ];
         buildInputs = [ pkgs.pkgsCross.mingwW64.windows.pthreads ];
+        # CMake 4 (Nixpkgs) dropped <3.5 compat; Opus CMakeLists is 2.8
+        env.CMAKE_POLICY_VERSION_MINIMUM = "3.5";
         cargoBuildFlags = [
           "--features"
           "client,cli"
           "--target"
           "x86_64-pc-windows-gnu"
         ];
-        # Cross builds often need to skip checks that require running the binary
         doCheck = false;
-        meta.description = "mic-relay Windows GUI (cross via mingw, best-effort)";
+        meta.description = "mic-relay Windows GUI client (cross via mingw, best-effort; Docker is preferred)";
       };
 
       # Docker-based Windows builder — reliable fallback requested by user.

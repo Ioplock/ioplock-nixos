@@ -241,8 +241,6 @@ async fn ensure_virtual_source(source_name: &str) -> bool {
         info!(source=%alt_source, "virtual source already exists (alt name)");
         return true;
     }
-    let mut final_source: String;
-
     // Try to create remapped source: prefer exact name, fallback to alt
     for try_name in [source_candidate.clone(), alt_source.clone()] {
         let out = tokio::process::Command::new("pactl")
@@ -265,10 +263,9 @@ async fn ensure_virtual_source(source_name: &str) -> bool {
                     if try_name != source_candidate {
                         warn!(source=%try_name, wanted=%source_candidate, "created alt source — select this in games (PipeWire disallows same name as sink)");
                     }
-                    final_source = try_name;
                     // Also try to set default source to it (best-effort)
                     let _ = tokio::process::Command::new("pactl")
-                        .args(["set-default-source", &final_source])
+                        .args(["set-default-source", &try_name])
                         .output()
                         .await;
                     return true;
