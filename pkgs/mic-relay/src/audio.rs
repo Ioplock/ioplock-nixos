@@ -430,21 +430,86 @@ fn repin_sink_inputs(sink: &str) -> Result<()> {
 
     let mut moved = false;
     for (input, cur, app) in entries {
-        if app != "mic-relay" || cur == sink_idx {
-            continue;
-        }
-        warn!(input=%input, from=%cur, to=%sink_idx, "another program moved the mic stream — re-pinning to virtual mic");
-        let st = Command::new("pactl")
-            .args(["move-sink-input", &input, sink])
-            .status();
-        if matches!(st, Ok(s) if s.success()) {
-            moved = true;
+        if app == "mic-relay" {
+            // Our mic feed must stay on the virtual sink
+            if cur == sink_idx {
+                continue;
+            }
+            warn!(input=%input, from=%cur, to=%sink_idx, "another program moved the mic stream — re-pinning to virtual mic");
+            let st = Command::new("pactl")
+                .args(["move-sink-input", &input, sink])
+                .status();
+            if matches!(st, Ok(s) if s.success()) {
+                moved = true;
+            }
+        } else if cur == sink_idx {
+            // Foreign stream (game/browser) ended up IN the mic sink — its audio
+            // becomes mic input and is inaudible. Move it to a real sink.
+            let Some(target) = fallback_sink(sink).or(cur_default_sink().filter(|d| d != sink)) else {
+                continue;
+            };
+            warn!(input=%input, app=%app, from=sink, to=%target, "foreign stream inside the mic sink — moving out");
+            let st = Command::new("pactl")
+                .args(["move-sink-input", &input, &target])
+                .status();
+            if matches!(st, Ok(s) if s.success()) {
+                moved = true;
+            }
         }
     }
+
+    // The null-sink must never be the default: streams that follow the default
+    // (games, browsers) would feed the mic and become inaudible.
+    if cur_default_sink().as_deref() == Some(sink) {
+        if let Some(alt) = fallback_sink(sink) {
+            warn!(from=%sink, to=%alt, "virtual mic is the default sink — repointing default to a real sink");
+            let _ = Command::new("pactl")
+                .args(["set-default-sink", &alt])
+                .status();
+        }
+    }
+
     if moved {
-        info!(sink=%sink, "mic stream re-pinned");
+        info!(sink=%sink, "sink routing corrected");
     }
     Ok(())
+}
+
+/// Best real sink to hand foreign streams to: prefer hardware output
+/// (`alsa_output.*`), skip monitors and the virtual mic itself.
+#[cfg(feature = "server")]
+fn fallback_sink(virtual_sink: &str) -> Option<String> {
+    let out = std::process::Command::new("pactl")
+        .args(["list", "sinks", "short"])
+        .output()
+        .ok()?;
+    let mut any = None;
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 2 {
+            continue;
+        }
+        let name = cols[1];
+        if name == virtual_sink || name.ends_with(".monitor") {
+            continue;
+        }
+        if name.starts_with("alsa_output.") {
+            return Some(name.to_string());
+        }
+        if any.is_none() {
+            any = Some(name.to_string());
+        }
+    }
+    any
+}
+
+#[cfg(feature = "server")]
+fn cur_default_sink() -> Option<String> {
+    let out = std::process::Command::new("pactl")
+        .args(["get-default-sink"])
+        .output()
+        .ok()?;
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 #[cfg(any(feature = "client", feature = "server"))]
