@@ -350,7 +350,101 @@ pub fn spawn_virtual_mic_writer(
     });
     // Give writer a moment to spawn pacat/pw-cat
     info!(sink=%sink_name, "virtual mic pulse writer started (ring 8192, latency 20ms)");
+    // Sunshine moves ALL sink-inputs into sink-sunshine-stereo on session start,
+    // hijacking our mic feed: games get silence (source suspends) and the mic is
+    // streamed back to the client (self-echo). A guardian re-pins it every 2 s.
+    #[cfg(feature = "server")]
+    {
+        spawn_sink_input_guardian(&sink_name);
+        info!(sink=%sink_name, "sink-input guardian started (re-pin every 2s)");
+    }
     Ok(ret)
+}
+
+/// Re-pin any sink-input belonging to mic-relay back to `sink_name`.
+/// Sunshine (and other default-sink switchers) move existing playback streams
+/// into their virtual game-audio sink on session start.
+#[cfg(feature = "server")]
+pub fn spawn_sink_input_guardian(sink_name: &str) {
+    let sink = sink_name.to_string();
+    std::thread::spawn(move || sink_input_guardian_thread(sink));
+}
+
+#[cfg(feature = "server")]
+fn sink_input_guardian_thread(sink: String) {
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        if let Err(e) = repin_sink_inputs(&sink) {
+            warn!(sink=%sink, error=%e, "sink-input guardian check failed");
+        }
+    }
+}
+
+#[cfg(feature = "server")]
+fn repin_sink_inputs(sink: &str) -> Result<()> {
+    use std::process::Command;
+    let out = Command::new("pactl")
+        .args(["list", "sinks", "short"])
+        .output()
+        .context("pactl list sinks")?;
+    let mut sink_idx: Option<String> = None;
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() >= 2 && cols[1] == sink {
+            sink_idx = Some(cols[0].to_string());
+            break;
+        }
+    }
+    let Some(sink_idx) = sink_idx else {
+        anyhow::bail!("sink {sink} not found (recreating?)");
+    };
+
+    let out = Command::new("pactl")
+        .args(["list", "sink-inputs"])
+        .output()
+        .context("pactl list sink-inputs")?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    // (input_idx, sink_idx, application.name)
+    let mut entries: Vec<(String, String, String)> = Vec::new();
+    let mut cur_idx: Option<String> = None;
+    let mut cur_sink: Option<String> = None;
+    let mut cur_app: Option<String> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("Sink Input #") {
+            if let (Some(i), Some(s)) = (cur_idx.clone(), cur_sink.clone()) {
+                entries.push((i, s, cur_app.take().unwrap_or_default()));
+            }
+            cur_idx = Some(rest.trim().trim_end_matches(':').to_string());
+            cur_sink = None;
+            cur_app = None;
+        } else if let Some(rest) = t.strip_prefix("Sink:") {
+            cur_sink = Some(rest.trim().to_string());
+        } else if let Some(rest) = t.strip_prefix("application.name = ") {
+            cur_app = Some(rest.trim().trim_matches('"').to_string());
+        }
+    }
+    if let (Some(i), Some(s)) = (cur_idx.clone(), cur_sink.clone()) {
+        entries.push((i, s, cur_app.take().unwrap_or_default()));
+    }
+
+    let mut moved = false;
+    for (input, cur, app) in entries {
+        if app != "mic-relay" || cur == sink_idx {
+            continue;
+        }
+        warn!(input=%input, from=%cur, to=%sink_idx, "another program moved the mic stream — re-pinning to virtual mic");
+        let st = Command::new("pactl")
+            .args(["move-sink-input", &input, sink])
+            .status();
+        if matches!(st, Ok(s) if s.success()) {
+            moved = true;
+        }
+    }
+    if moved {
+        info!(sink=%sink, "mic stream re-pinned");
+    }
+    Ok(())
 }
 
 #[cfg(any(feature = "client", feature = "server"))]

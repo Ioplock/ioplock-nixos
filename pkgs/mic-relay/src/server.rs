@@ -263,11 +263,15 @@ async fn ensure_virtual_source(source_name: &str) -> bool {
                     if try_name != source_candidate {
                         warn!(source=%try_name, wanted=%source_candidate, "created alt source — select this in games (PipeWire disallows same name as sink)");
                     }
-                    // Also try to set default source to it (best-effort)
-                    let _ = tokio::process::Command::new("pactl")
-                        .args(["set-default-source", &try_name])
-                        .output()
-                        .await;
+                    // Also try to set default source to it (best-effort). The name is
+                    // ambiguous with the same-named sink ("No such entity"), so resolve
+                    // the source index and set by index.
+                    let set = set_default_source_by_name(&try_name).await;
+                    if set {
+                        info!(source=%try_name, "default source set");
+                    } else {
+                        warn!(source=%try_name, "could not set default source (non-fatal)");
+                    }
                     return true;
                 }
             }
@@ -296,6 +300,29 @@ async fn ensure_virtual_source(source_name: &str) -> bool {
         matches!(out, Ok(o) if String::from_utf8_lossy(&o.stdout).contains(sink))
     };
     sink_ok
+}
+
+async fn set_default_source_by_name(name: &str) -> bool {
+    let out = tokio::process::Command::new("pactl")
+        .args(["list", "sources", "short"])
+        .output()
+        .await;
+    let Ok(o) = out else {
+        return false;
+    };
+    for line in String::from_utf8_lossy(&o.stdout).lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() >= 2 && cols[1] == name {
+            if let Ok(o2) = tokio::process::Command::new("pactl")
+                .args(["set-default-source", cols[0]])
+                .output()
+                .await
+            {
+                return o2.status.success();
+            }
+        }
+    }
+    false
 }
 
 async fn audio_loop(
