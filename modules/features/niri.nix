@@ -263,6 +263,14 @@
             props.hotkey-overlay-title = "Switch Wallpaper";
             content.spawn-sh = "${lib.getExe self'.packages.myQuickshell} ipc call wallpaperPicker toggle";
           };
+          "Mod+Shift+P" = _: {
+            props.hotkey-overlay-title = "Power Menu";
+            content.spawn-sh = "${lib.getExe self'.packages.myQuickshell} ipc call powerMenu toggle";
+          };
+          "Mod+Ctrl+Alt+L" = _: {
+            props.hotkey-overlay-title = "Lock Screen";
+            content.spawn-sh = "${lib.getExe self'.packages.myQuickshell} ipc call lock lock";
+          };
         };
       };
     in

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 
 ShellRoot {
     id: root
@@ -23,6 +24,35 @@ ShellRoot {
     SettingsWindow {
         id: settingsWindow
         appSettings: appSettings
+    }
+
+    // QS_ENABLE_LOCK=0 disables the lock screen entirely (gaming host mimosa).
+    // QuickShell.env returns "" if unset, so default is enabled.
+    readonly property bool lockEnabled: Quickshell.env("QS_ENABLE_LOCK") !== "0"
+
+    LockContext {
+        id: lockContext
+        onUnlocked: lock.locked = false
+    }
+
+    // Secure session lock — one WlSessionLockSurface per screen when locked.
+    // Must set locked=false before exit or compositor shows solid fallback.
+    WlSessionLock {
+        id: lock
+        locked: false
+        WlSessionLockSurface {
+            LockSurface {
+                anchors.fill: parent
+                context: lockContext
+                appSettings: appSettings
+            }
+        }
+    }
+
+    PowerOverlay {
+        id: powerOverlay
+        appSettings: appSettings
+        showLock: root.lockEnabled
     }
 
     function volumeLevel() {
@@ -112,6 +142,38 @@ ShellRoot {
 
         function toggle(): void {
             wallpaperPicker.visible = !wallpaperPicker.visible
+        }
+    }
+
+    IpcHandler {
+        target: "lock"
+
+        function lock(): void {
+            if (root.lockEnabled) lock.locked = true
+        }
+
+        function unlock(): void {
+            lock.locked = false
+        }
+
+        function toggle(): void {
+            if (root.lockEnabled) lock.locked = !lock.locked
+        }
+    }
+
+    IpcHandler {
+        target: "powerMenu"
+
+        function toggle(): void {
+            powerOverlay.overlayVisible = !powerOverlay.overlayVisible
+        }
+
+        function show(): void {
+            powerOverlay.overlayVisible = true
+        }
+
+        function hide(): void {
+            powerOverlay.overlayVisible = false
         }
     }
 
