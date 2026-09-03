@@ -302,3 +302,15 @@ behind WireGuard/Tailscale and don’t set `openFirewall = true` to WAN.
 * **1–2 s lag**: 192 k ring (4 s) + 100 ms default latency + host default cpal buffer → trimmed to
   8192 ring + 20 ms `pacat`/`pw-cat` latency + `BufferSize::Fixed(960)` + jitter drop >50 ms.
 * **Docker**: `rust:1.82` vs `cargo-xwin 0.23.1 requires 1.89` → bump to `1.89` + fallback install.
+* **Sunshine steals the mic stream**: on Moonlight session start Sunshine moves *all* sink-inputs
+  into `sink-sunshine-stereo` (and on session end restores the default sink to whatever it saved —
+  often `MicRelay`). Effects: mic feed hijacked → `MicRelay` source suspends → game mic flatline,
+  and mic audio plays into the game-audio sink → Sunshine captures it → client hears itself (echo).
+  Fixed by a **guardian thread** in `audio.rs` (`spawn_sink_input_guardian`, 2 s interval):
+  * re-pins `application.name="mic-relay"` sink-inputs back to the virtual sink;
+  * evicts foreign streams (games/browsers) found inside the mic sink to a real sink
+    (prefers `alsa_output.*`, else first non-monitor non-virtual);
+  * never lets the virtual mic stay the default sink.
+* **Default source ambiguity**: `pactl set-default-source MicRelay` fails (`No such entity`) —
+  the name collides with the same-named sink. Resolve the index from
+  `pactl list sources short` and `set-default-source <index>` (`server.rs`).
