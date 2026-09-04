@@ -17,6 +17,7 @@
         self.nixosModules.git
         self.nixosModules.micRelay
         self.nixosModules.nh
+        self.nixosModules.obsidian
         self.nixosModules.opencode
         self.nixosModules.quickshell
         self.nixosModules.rofi
