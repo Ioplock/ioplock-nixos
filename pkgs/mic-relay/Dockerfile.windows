@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1
+# Windows cross-build for mic-relay GUI client
+# Usage (via Nix helper):
+#   nix run .#micRelayBuildWindows -- pkgs/mic-relay result-win
+# Or manually:
+#   docker build -f pkgs/mic-relay/Dockerfile.windows -t mic-relay-windows-builder .
+#   docker create --name tmp mic-relay-windows-builder
+#   docker cp tmp:/out/mic-relay.exe ./mic-relay.exe
+#   docker rm tmp
+FROM rust:1.89-bookworm AS builder
+
+ARG SRC=pkgs/mic-relay
+ARG TARGET=x86_64-pc-windows-gnu
+
+# Cross toolchain + deps for cpal (WASAPI needs no extra libs) and opus (needs libopus)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    mingw-w64 \
+    pkg-config \
+    cmake \
+    clang \
+    libopus-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo-xwin for MSVC target alternatively, but we use GNU here for simplicity
+# cargo-xwin fetches Windows SDK and handles linking better than raw mingw.
+# Pin-friendly: use latest with current rust, fallback to 0.18.6 on older rust.
+RUN cargo install cargo-xwin --locked || cargo install cargo-xwin --version 0.18.6 --locked
+
+WORKDIR /build
+COPY pkgs/mic-relay/Cargo.toml ./Cargo.toml
+COPY pkgs/mic-relay/Cargo.lock ./Cargo.lock
+COPY pkgs/mic-relay/src ./src
+
+# Pre-create a dummy main to cache deps (optional layer cache)
+# --target GNU works with mingw linker; MSVC via xwin would be:
+#   cargo xwin build --release --target x86_64-pc-windows-msvc --features client,cli
+RUN rustup target add x86_64-pc-windows-gnu
+
+# Build release Windows exe with GUI features
+# Opus cmake defaults to OPUS_STACK_PROTECTOR/FORTIFY/HARDENING=ON which under
+# mingw adds -fstack-protector-strong + libssp (needs libssp-0.dll). CFLAGS alone
+# doesn't disable the cmake options, so patch audiopus_sys to force OFF.
+ENV CFLAGS="-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+ENV CXXFLAGS="-O2 -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
+RUN cargo fetch || true; \
+    for f in /usr/local/cargo/registry/src/index.crates.io-*/audiopus_sys-*/build.rs; do \
+      [ -f "$f" ] && sed -i 's|cmake::build(opus_path)|cmake::Config::new(opus_path).define("OPUS_STACK_PROTECTOR","OFF").define("OPUS_FORTIFY_SOURCE","OFF").define("OPUS_HARDENING","OFF").build()|' "$f" && echo "patched $f" || true; \
+    done
+RUN cargo build --release --target x86_64-pc-windows-gnu --features client,cli
+
+# Export stage — copy exe to /out for `docker build --output` or `docker cp`
+FROM scratch AS export
+COPY --from=builder /build/target/x86_64-pc-windows-gnu/release/mic-relay.exe /out/mic-relay.exe
+COPY --from=builder /build/target/x86_64-pc-windows-gnu/release/mic-relay.exe /mic-relay.exe
+
+# Default image (if not using --output) just holds the exe at /out
+FROM builder AS final
+RUN mkdir -p /out && cp /build/target/x86_64-pc-windows-gnu/release/mic-relay.exe /out/mic-relay.exe
+CMD ["ls", "-lh", "/out/mic-relay.exe"]

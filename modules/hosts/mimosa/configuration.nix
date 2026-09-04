@@ -14,6 +14,7 @@
         self.nixosModules.firefox
         self.nixosModules.fonts
         self.nixosModules.git
+        self.nixosModules.micRelay
         self.nixosModules.monitoring
         self.nixosModules.nh
         self.nixosModules.niri
@@ -154,6 +155,18 @@ Ho4zRJEIXy8O
       # ==================================================
       # Key-only login.
       services.openssh.settings.PasswordAuthentication = false;
+
+      # ==================================================
+      # Mic Relay — headless server, mDNS discoverable
+      # ==================================================
+      myMicRelay = {
+        enable = true;
+        role = "server";
+        server = {
+          openFirewall = true;
+          mdns = true;
+        };
+      };
 
       # ==================================================
       # Monitoring

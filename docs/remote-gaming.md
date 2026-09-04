@@ -67,6 +67,28 @@ the manual restart.
    enter the PIN under PIN tab.
 4. Stream "Desktop". The gaming niri session is already live via autologin.
 
+## Microphone — mic-relay to Mimosa’s virtual mic
+
+Sunshine streams video, but the headless `mimosa` has no mic. `mic-relay`
+(`docs/mic-relay.md`) forwards whichever LAN machine’s mic is **Active** to a
+PipeWire **source** `MicRelay` on `mimosa` (null-sink `MicRelay` → remapped source `MicRelay` via
+`module-remap-source`, fallback `.monitor`) that games see as a normal mic.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Server (headless) | `mimosa` `myMicRelay.role = "server"` | `systemd.user.services.mic-relay-server`, `MicRelay` null-sink + `MicRelay` real `Audio/Source` via `module-remap-source`/`pw-cli`, `pacat`/`pw-cat` writer (ring 8192, 20 ms, no cpal default fallback) → Opus decode, `services.avahi` + `networking.firewall` (TCP 50051, UDP 50052/5353) when `openFirewall = true` |
+| Client (Linux GUI) | `acrux` `role = "client"` | `egui` `mic-relay` GUI (`Discover` via `_mic-relay._tcp` mDNS or `192.168.1.92:50051`), `cpal` capture 48 kHz mono Opus 32 kbps over UDP (`Fixed(960)` low-latency), VU, **Take Mic**/**Release** exclusive |
+| Windows client | Windows | same crate cross-compiled — see `docs/mic-relay.md#compiling-for-windows` (Docker `rust:1.89` `nix run .#micRelayBuildWindows` or `nix build .#myMicRelayWindowsCross`) |
+| Control | LAN | TCP 50051 JSON (`Hello`/`HelloAck`/`ClientList`/`RequestActive`/`ActiveChanged`/`VuUpdate`, `Ping`→rebroadcast) + UDP 50052 Opus `AudioHeader` (12 B) |
+
+**Use:** on `acrux`/Windows launch `mic-relay`, **Discover** or enter
+`192.168.1.92:50051`, **Take Mic** (exclusive, green `Active: <name>` banner),
+select **`MicRelay`** (or `MicRelayMic` alt) as mic in game/Discord (`MicRelay.monitor` fallback hidden in some pickers). `mimosa` CLI:
+`mic-relay ctl --server 192.168.1.92:50051 status|list --json` or `nc`. Check `pactl list sources | grep MicRelay` and `pw-link -l | grep MicRelay`.
+
+See `docs/mic-relay.md` for protocol, Windows cross-build, and
+`pactl`/`pw-record` verification.
+
 ## Declarative-settings tradeoff
 
 Any non-empty `services.sunshine.settings` locks out web-UI configuration

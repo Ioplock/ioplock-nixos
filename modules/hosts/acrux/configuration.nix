@@ -15,6 +15,7 @@
         self.nixosModules.firefox
         self.nixosModules.fonts
         self.nixosModules.git
+        self.nixosModules.micRelay
         self.nixosModules.nh
         self.nixosModules.opencode
         self.nixosModules.quickshell
@@ -95,6 +96,14 @@
       };
 
       programs.nh.flake = "/home/ioplock/nixconf";
+
+      # ==================================================
+      # Mic Relay — GUI client (mDNS discoverable, fallback 192.168.1.92:50051)
+      # ==================================================
+      myMicRelay = {
+        enable = true;
+        role = "client";
+      };
 
       # ==================================================
       # Desktop
