@@ -125,6 +125,7 @@ Variants {
                             Layout.fillWidth: true
                             spacing: 8
                             Text {
+                                Layout.alignment: Qt.AlignVCenter
                                 text: "\uF011"
                                 font.family: root.iconFam
                                 font.pixelSize: root.fontSz + 6
@@ -132,6 +133,7 @@ Variants {
                             }
                             ColumnLayout {
                                 Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
                                 spacing: 0
                                 Text {
                                     text: "Power"
@@ -151,6 +153,7 @@ Variants {
                             Rectangle {
                                 Layout.preferredWidth: 28
                                 Layout.preferredHeight: 28
+                                Layout.alignment: Qt.AlignVCenter
                                 radius: 14
                                 color: closeMa.containsMouse ? Qt.lighter(root.cardBg, 1.4) : "transparent"
                                 Text {
@@ -190,6 +193,37 @@ Variants {
                             Keys.onRightPressed: event => { grid.moveCurrentIndexRight(); event.accepted = true }
                             Keys.onUpPressed: event => { grid.moveCurrentIndexUp(); event.accepted = true }
                             Keys.onDownPressed: event => { grid.moveCurrentIndexDown(); event.accepted = true }
+                            // Grid holds activeFocus (forceActiveFocus below), so Esc and
+                            // letter shortcuts must be handled here — contentItem
+                            // never sees them while the grid is focused.
+                            Keys.onEscapePressed: event => {
+                                root.overlayVisible = false
+                                event.accepted = true
+                            }
+                            Keys.onPressed: event => {
+                                if (event.key === Qt.Key_Escape) {
+                                    root.overlayVisible = false
+                                    event.accepted = true
+                                    return
+                                }
+                                for (let i = 0; i < root.buttons.length; i++) {
+                                    const b = root.buttons[i]
+                                    if (b.keybind !== null && event.key === b.keybind) {
+                                        root.overlayVisible = false
+                                        b.exec()
+                                        event.accepted = true
+                                        return
+                                    }
+                                }
+                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                    if (grid.currentIndex >= 0 && grid.currentIndex < root.buttons.length) {
+                                        const b2 = root.buttons[grid.currentIndex]
+                                        root.overlayVisible = false
+                                        b2.exec()
+                                        event.accepted = true
+                                    }
+                                }
+                            }
 
                             delegate: Item {
                                 id: tile
@@ -277,8 +311,11 @@ Variants {
             }
         }
 
-        // Ensure grid gets focus when overlay appears
-        onVisibleChanged: if (visible) grid.forceActiveFocus()
+        // Reset selection and grab focus when overlay appears.
+        onVisibleChanged: if (visible) {
+            grid.currentIndex = 0
+            grid.forceActiveFocus()
+        }
     }
 
     onOverlayVisibleChanged: {

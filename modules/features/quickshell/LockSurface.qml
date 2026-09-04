@@ -3,21 +3,31 @@ import QtQuick.Layouts
 import Quickshell.Io
 
 // Per-screen lock UI shown inside each WlSessionLockSurface.
-// Clock + date, static wallpaper (from appSettings), password field, failure + caps/num hints.
-// Theme matches Settings/WallpaperPicker/WifiMenu (barColor, accentColor, textColor).
+// Minimal: clock + date, wallpaper with dim, password pill, dot indicators.
+// Theme matches Settings (barColor, accentColor, textColor).
 Rectangle {
     id: surfaceRoot
 
     required property var context
     property var appSettings
 
-    // Whether caps/num appear on. Best-effort via polling /sys LEDs + key tracking.
+    // Caps/num state. Polled from /sys LEDs; key tracking gives instant flip.
     property bool capsOn: false
     property bool numOn: false
 
-    color: "transparent"
+    readonly property color textC: appSettings ? appSettings.textColor : "#cdd6f4"
+    readonly property color accentC: appSettings ? appSettings.accentColor : "#f77af5ff"
+    readonly property color barC: appSettings ? appSettings.barColor : "#1e1e2e"
+    readonly property string fontFam: appSettings ? appSettings.fontFamily : "sans-serif"
+    readonly property string iconFam: appSettings ? appSettings.iconFontFamily : "JetBrainsMono Nerd Font"
+    readonly property int fontSz: appSettings ? appSettings.fontSize : 13
 
-    // Wallpaper (static, same path the desktop uses) + dim so text stays readable.
+    // Solid base so the compositor default (white) never flashes through.
+    color: barC
+
+    // Static wallpaper (same path the desktop uses). No sourceSize: with
+    // parent-based sourceSize the image could bind to 0x0 on surface creation
+    // and stay blank — PreserveAspectCrop scales without it.
     Image {
         id: wpImage
         anchors.fill: parent
@@ -26,37 +36,28 @@ Rectangle {
         asynchronous: true
         mipmap: true
         smooth: true
-        // 2x screen to stay sharp on hidpi
-        sourceSize: Qt.size(parent.width * 2, parent.height * 2)
         visible: source !== ""
     }
 
     Rectangle {
         anchors.fill: parent
-        color: Qt.rgba(
-            appSettings ? Qt.color(appSettings.barColor).r : 0.118,
-            appSettings ? Qt.color(appSettings.barColor).g : 0.118,
-            appSettings ? Qt.color(appSettings.barColor).b : 0.180,
-            wpImage.visible ? 0.72 : 0.98
-        )
+        color: Qt.rgba(barC.r, barC.g, barC.b, wpImage.visible ? 0.55 : 0.0)
     }
 
-    // Clock + date + password card, centered.
     ColumnLayout {
         anchors.centerIn: parent
-        spacing: 18
-        width: Math.min(parent.width - 32, 520)
+        spacing: 14
+        width: Math.min(parent.width - 48, 380)
 
-        // Clock — large, native rendering like official example.
         Text {
             id: clockText
             property var now: new Date()
             Layout.alignment: Qt.AlignHCenter
             renderType: Text.NativeRendering
-            font.pointSize: 56
+            font.pointSize: 64
             font.weight: Font.Light
-            color: appSettings ? appSettings.textColor : "#cdd6f4"
-            font.family: appSettings ? appSettings.fontFamily : "sans-serif"
+            color: textC
+            font.family: fontFam
             text: Qt.formatDateTime(clockText.now, "hh:mm")
             Timer {
                 running: true
@@ -67,224 +68,192 @@ Rectangle {
         }
 
         Text {
-            id: dateText
             Layout.alignment: Qt.AlignHCenter
-            font.pixelSize: (appSettings ? appSettings.fontSize : 13) + 1
-            color: appSettings ? appSettings.textColor : "#cdd6f4"
-            opacity: 0.75
-            font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-            text: Qt.formatDateTime(clockText.now, "dddd, dd MMMM yyyy")
+            Layout.topMargin: -10
+            font.pixelSize: fontSz
+            color: textC
+            opacity: 0.6
+            font.family: fontFam
+            text: Qt.formatDateTime(clockText.now, "ddd, d MMM")
         }
 
-        // Password card
+        // Password pill
         Rectangle {
+            id: pill
             Layout.fillWidth: true
-            Layout.preferredHeight: cardColumn.implicitHeight + 28
-            radius: 14
-            color: Qt.rgba(0.118, 0.118, 0.180, 0.96)
-            border.color: Qt.rgba(
-                appSettings ? Qt.color(appSettings.accentColor).r : 0.969,
-                appSettings ? Qt.color(appSettings.accentColor).g : 0.478,
-                appSettings ? Qt.color(appSettings.accentColor).b : 0.961,
-                context.showFailure ? 0.55 : 0.35
-            )
-            border.width: 1
+            Layout.preferredHeight: 48
+            radius: 24
+            color: Qt.darker(barC, 1.35)
+            border.color: context.showFailure ? "#f38ba8" : (pwField.activeFocus ? accentC : "transparent")
+            border.width: (context.showFailure || pwField.activeFocus) ? 1 : 0
 
-            Behavior on border.color { ColorAnimation { duration: 150 } }
+            Behavior on border.color { ColorAnimation { duration: 120 } }
 
-            ColumnLayout {
-                id: cardColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 14
-                spacing: 10
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 8
+                spacing: 8
 
                 Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: context.unlockInProgress ? "Unlocking…" : "Enter password to unlock"
-                    font.pixelSize: appSettings ? appSettings.fontSize : 13
-                    font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-                    color: appSettings ? appSettings.textColor : "#cdd6f4"
-                    opacity: 0.85
+                    Layout.alignment: Qt.AlignVCenter
+                    text: "\uF023"
+                    font.family: iconFam
+                    font.pixelSize: fontSz + 1
+                    color: textC
+                    opacity: pwField.activeFocus ? 1.0 : 0.55
                 }
 
-                RowLayout {
+                TextInput {
+                    id: pwField
                     Layout.fillWidth: true
-                    spacing: 8
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 44
-                        radius: 10
-                        color: Qt.darker(appSettings ? appSettings.barColor : "#1e1e2e", 1.35)
-                        border.color: pwField.activeFocus ? (appSettings ? appSettings.accentColor : "#f77af5ff") : "transparent"
-                        border.width: pwField.activeFocus ? 1 : 0
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 8
-                            spacing: 8
-
-                            Text {
-                                text: "\uF023"
-                                font.family: appSettings ? appSettings.iconFontFamily : "JetBrainsMono Nerd Font"
-                                font.pixelSize: (appSettings ? appSettings.fontSize : 13) + 2
-                                color: appSettings ? appSettings.textColor : "#cdd6f4"
-                                opacity: pwField.activeFocus ? 1.0 : 0.6
-                            }
-
-                            TextInput {
-                                id: pwField
-                                Layout.fillWidth: true
-                                color: appSettings ? appSettings.textColor : "#cdd6f4"
-                                font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-                                font.pixelSize: appSettings ? appSettings.fontSize : 13
-                                echoMode: TextInput.Password
-                                passwordCharacter: "\u2022"
-                                inputMethodHints: Qt.ImhSensitiveData
-                                focus: true
-                                enabled: !context.unlockInProgress
-                                clip: true
-                                selectByMouse: false
-                                // Keep context in sync (official pattern)
-                                onTextChanged: if (text !== context.currentText) context.currentText = text
-                                onAccepted: context.tryUnlock()
-                                Keys.onEscapePressed: event => {
-                                    // clear on Esc
-                                    pwField.text = ""
-                                }
-                            }
-
-                            // show / hide toggle
-                            Text {
-                                id: revealIcon
-                                property bool revealed: false
-                                text: revealed ? "\uF070" : "\uF06E"
-                                font.family: appSettings ? appSettings.iconFontFamily : "JetBrainsMono Nerd Font"
-                                font.pixelSize: (appSettings ? appSettings.fontSize : 13) - 1
-                                color: revealMouse.containsMouse ? (appSettings ? appSettings.accentColor : "#f77af5ff") : (appSettings ? appSettings.textColor : "#cdd6f4")
-                                opacity: revealMouse.containsMouse ? 1.0 : 0.55
-                                MouseArea {
-                                    id: revealMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        revealIcon.revealed = !revealIcon.revealed
-                                        pwField.echoMode = revealIcon.revealed ? TextInput.Normal : TextInput.Password
-                                    }
-                                }
-                            }
+                    Layout.alignment: Qt.AlignVCenter
+                    color: textC
+                    font.family: fontFam
+                    font.pixelSize: fontSz
+                    echoMode: TextInput.Password
+                    passwordCharacter: "\u2022"
+                    inputMethodHints: Qt.ImhSensitiveData
+                    focus: true
+                    enabled: !context.unlockInProgress
+                    clip: true
+                    selectByMouse: false
+                    onTextChanged: if (text !== context.currentText) context.currentText = text
+                    onAccepted: context.tryUnlock()
+                    Keys.onEscapePressed: event => {
+                        pwField.text = ""
+                        event.accepted = true
+                    }
+                    // Instant caps/num flip between LED polls.
+                    Keys.onPressed: event => {
+                        if (event.key === Qt.Key_CapsLock) {
+                            surfaceRoot.capsOn = !surfaceRoot.capsOn
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_NumLock) {
+                            surfaceRoot.numOn = !surfaceRoot.numOn
+                            event.accepted = true
                         }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: 92
-                        Layout.preferredHeight: 44
-                        radius: 10
-                        color: unlockMouse.containsMouse
-                            ? Qt.lighter(appSettings ? appSettings.accentColor : "#f77af5ff", 1.08)
-                            : (appSettings ? appSettings.accentColor : "#f77af5ff")
-                        opacity: context.currentText === "" || context.unlockInProgress ? 0.55 : 1.0
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Unlock"
-                            font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-                            font.pixelSize: (appSettings ? appSettings.fontSize : 13)
-                            font.weight: Font.Medium
-                            color: appSettings ? appSettings.barColor : "#1e1e2e"
-                        }
-
-                        MouseArea {
-                            id: unlockMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            enabled: context.currentText !== "" && !context.unlockInProgress
-                            onClicked: context.tryUnlock()
-                        }
-                    }
-                }
-
-                // Keep field text in sync when context changes (multi-monitor)
-                Connections {
-                    target: context
-                    function onCurrentTextChanged() {
-                        if (pwField.text !== context.currentText) pwField.text = context.currentText
-                    }
-                }
-
-                // Failure message
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: context.showFailure
-                    text: "Incorrect password"
-                    font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-                    font.pixelSize: (appSettings ? appSettings.fontSize : 13) - 1
-                    color: "#f38ba8"
-                }
-
-                // Caps / Num hints row
-                RowLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: surfaceRoot.capsOn || surfaceRoot.numOn
-                    spacing: 12
-
-                    Text {
-                        visible: surfaceRoot.capsOn
-                        text: "\u26A0 Caps Lock on"
-                        font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-                        font.pixelSize: (appSettings ? appSettings.fontSize : 13) - 2
-                        color: "#f9e2af"
-                    }
-
-                    Text {
-                        visible: surfaceRoot.capsOn && surfaceRoot.numOn
-                        text: "•"
-                        font.pixelSize: 8
-                        color: appSettings ? appSettings.textColor : "#cdd6f4"
-                        opacity: 0.4
-                    }
-
-                    Text {
-                        visible: surfaceRoot.numOn
-                        text: "Num Lock on"
-                        font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-                        font.pixelSize: (appSettings ? appSettings.fontSize : 13) - 2
-                        color: appSettings ? appSettings.textColor : "#cdd6f4"
-                        opacity: 0.7
                     }
                 }
 
                 Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: !(surfaceRoot.capsOn || surfaceRoot.numOn)
-                    text: "Press Enter to unlock • Esc to clear"
-                    font.family: appSettings ? appSettings.fontFamily : "sans-serif"
-                    font.pixelSize: (appSettings ? appSettings.fontSize : 13) - 3
-                    color: appSettings ? appSettings.textColor : "#cdd6f4"
-                    opacity: 0.38
+                    id: revealIcon
+                    Layout.alignment: Qt.AlignVCenter
+                    property bool revealed: false
+                    text: revealed ? "\uF070" : "\uF06E"
+                    font.family: iconFam
+                    font.pixelSize: fontSz - 1
+                    color: revealMouse.containsMouse ? accentC : textC
+                    opacity: revealMouse.containsMouse ? 1.0 : 0.5
+                    MouseArea {
+                        id: revealMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            revealIcon.revealed = !revealIcon.revealed
+                            pwField.echoMode = revealIcon.revealed ? TextInput.Normal : TextInput.Password
+                        }
+                    }
                 }
+
+                Rectangle {
+                    id: goBtn
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    Layout.alignment: Qt.AlignVCenter
+                    radius: 16
+                    color: goMouse.containsMouse ? Qt.lighter(accentC, 1.08) : accentC
+                    opacity: (context.currentText === "" || context.unlockInProgress) ? 0.35 : 1.0
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "\uF061"
+                        font.family: iconFam
+                        font.pixelSize: fontSz
+                        color: barC
+                    }
+
+                    MouseArea {
+                        id: goMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        enabled: context.currentText !== "" && !context.unlockInProgress
+                        onClicked: context.tryUnlock()
+                    }
+                }
+            }
+        }
+
+        // Keep field text in sync when context changes (multi-monitor).
+        Connections {
+            target: context
+            function onCurrentTextChanged() {
+                if (pwField.text !== context.currentText) pwField.text = context.currentText
             }
         }
 
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: "Locked — " + (appSettings ? appSettings.textColor : "")
-            visible: false
+            visible: context.showFailure
+            text: "Incorrect password"
+            font.family: fontFam
+            font.pixelSize: fontSz - 1
+            color: "#f38ba8"
+        }
+
+        // Caps / Num indicators: colored dot + short label. Always visible so
+        // the layout doesn't jump; dim when off, amber/green when on.
+        Row {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 16
+
+            Row {
+                spacing: 6
+                opacity: surfaceRoot.capsOn ? 1.0 : 0.32
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 8
+                    height: 8
+                    radius: 4
+                    color: surfaceRoot.capsOn ? "#f9e2af" : textC
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "CAPS"
+                    font.family: fontFam
+                    font.pixelSize: fontSz - 3
+                    font.weight: surfaceRoot.capsOn ? Font.Bold : Font.Normal
+                    color: surfaceRoot.capsOn ? "#f9e2af" : textC
+                }
+            }
+
+            Row {
+                spacing: 6
+                opacity: surfaceRoot.numOn ? 1.0 : 0.32
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 8
+                    height: 8
+                    radius: 4
+                    color: surfaceRoot.numOn ? "#a6e3a1" : textC
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "NUM"
+                    font.family: fontFam
+                    font.pixelSize: fontSz - 3
+                    font.weight: surfaceRoot.numOn ? Font.Bold : Font.Normal
+                    color: surfaceRoot.numOn ? "#a6e3a1" : textC
+                }
+            }
         }
     }
 
-    // ---- Caps/Num detection ----
-    // Poll /sys/class/leds for capslock/numlock brightness; fallback to key tracking.
-    // Poll only while this surface exists (i.e., when locked) to avoid wakeups.
-    // Using Process + SplitParser is heavier than needed; a simple Process with StdioCollector per tick is enough.
+    // ---- Caps/Num detection via /sys LEDs (covers initial state) ----
     Process {
         id: ledPoll
-        // Try common LED names; wildcard via shell so missing paths don't error.
         command: ["sh", "-c", "for p in /sys/class/leds/*capslock/brightness /sys/class/leds/*caps*lock*/brightness; do [ -f \"$p\" ] && cat \"$p\" && exit; done; echo \"\""]
         stdout: StdioCollector {
             onStreamFinished: {
@@ -306,7 +275,7 @@ Rectangle {
     }
 
     Timer {
-        interval: 1200
+        interval: 1500
         running: true
         repeat: true
         triggeredOnStart: true
@@ -316,16 +285,14 @@ Rectangle {
         }
     }
 
-    // Also track Caps/Num key presses to flip hint immediately between polls.
-    Keys.onPressed: event => {
-        if (event.key === Qt.Key_CapsLock) {
-            surfaceRoot.capsOn = !surfaceRoot.capsOn
-            event.accepted = true
-        } else if (event.key === Qt.Key_NumLock) {
-            surfaceRoot.numOn = !surfaceRoot.numOn
-            event.accepted = true
+    // Re-focus the field when this screen's window becomes active (one surface
+    // per screen; only the active one can hold focus).
+    Connections {
+        target: surfaceRoot.Window.window
+        ignoreUnknownSignals: true
+        function onActiveChanged() {
+            if (surfaceRoot.Window.window && surfaceRoot.Window.window.active && !context.unlockInProgress)
+                pwField.forceActiveFocus()
         }
     }
-
-    Component.onCompleted: pwField.forceActiveFocus()
 }
