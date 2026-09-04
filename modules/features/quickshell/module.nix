@@ -30,6 +30,12 @@
       environment.systemPackages = [
         self.packages.${pkgs.stdenv.hostPlatform.system}.myQuickshell
       ];
+
+      # Needed for user `systemctl suspend/reboot/poweroff` from the power overlay.
+      security.polkit.enable = true;
+
+      # Don't let the physical power key bypass the overlay.
+      services.logind.settings.Login.HandlePowerKey = "ignore";
     };
 
   perSystem =
@@ -74,6 +80,7 @@
         configPath = ./.;
         extraPackages = [
           pkgs.coreutils
+          pkgs.systemd
           self'.packages.myQuickshellStatus
           self'.packages.myWallpaperList
           self'.packages.myToggleBluetooth

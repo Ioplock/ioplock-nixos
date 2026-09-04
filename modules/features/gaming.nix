@@ -16,9 +16,11 @@
         inherit pkgs;
         imports = [ self.wrapperModules.quickshell ];
         env.QS_COMPACT = "1";
+        env.QS_ENABLE_LOCK = "0";
         extraPackages = [
           pkgs.coreutils
           pkgs.niri
+          pkgs.systemd
           pkgs.wireplumber
           self'.packages.myQuickshellStatus
           self'.packages.myWallpaperList
@@ -194,6 +196,10 @@
             "Mod+Shift+W" = _: {
               props.hotkey-overlay-title = "Switch Wallpaper";
               content.spawn-sh = "${lib.getExe self'.packages.myQuickshellGaming} ipc call wallpaperPicker toggle";
+            };
+            "Mod+Shift+P" = _: {
+              props.hotkey-overlay-title = "Power Menu";
+              content.spawn-sh = "${lib.getExe self'.packages.myQuickshellGaming} ipc call powerMenu toggle";
             };
           };
         };

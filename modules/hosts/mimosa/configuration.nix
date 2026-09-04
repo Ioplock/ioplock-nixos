@@ -19,6 +19,7 @@
         self.nixosModules.nh
         self.nixosModules.niri
         self.nixosModules.opencode
+        self.nixosModules.quickshell
         self.nixosModules.rofi
         self.nixosModules.shell
         self.nixosModules.neovim
