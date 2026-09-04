@@ -157,6 +157,31 @@ PanelWindow {
                     color: appSettings ? appSettings.textColor : "#cdd6f4"
                     opacity: 0.5
                 }
+
+                Rectangle {
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    Layout.alignment: Qt.AlignVCenter
+                    radius: 14
+                    color: closeMa.containsMouse ? Qt.lighter(appSettings.barColor, 1.4) : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "\uF00D"
+                        font.family: appSettings ? appSettings.iconFontFamily : "JetBrainsMono Nerd Font"
+                        font.pixelSize: appSettings ? appSettings.fontSize : 13
+                        color: appSettings ? appSettings.textColor : "#cdd6f4"
+                        opacity: closeMa.containsMouse ? 1.0 : 0.6
+                    }
+
+                    MouseArea {
+                        id: closeMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: picker.visible = false
+                    }
+                }
             }
 
             GridView {

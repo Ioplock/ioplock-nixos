@@ -9,7 +9,16 @@ Rectangle {
     id: surfaceRoot
 
     required property var context
-    property var appSettings
+
+    // Own Settings instance (reads the same ~/.config/quickshell/settings.json
+    // and watches it for changes). The shell-scope `appSettings` id does not
+    // resolve inside WlSessionLockSurface content — live debug showed it
+    // arriving as NULL — so the lock screen must not depend on receiving the
+    // shared object from shell.qml.
+    Settings {
+        id: lockSettings
+    }
+    readonly property var appSettings: lockSettings
 
     // Caps/num state. Polled from /sys LEDs; key tracking gives instant flip.
     property bool capsOn: false
@@ -33,7 +42,11 @@ Rectangle {
         anchors.fill: parent
         source: appSettings && appSettings.wallpaper ? "file://" + appSettings.wallpaper : ""
         fillMode: Image.PreserveAspectCrop
-        asynchronous: true
+        // Synchronous: the file is small (~1672x941) and sync guarantees the
+        // texture exists on the first frame (rules out async completion races
+        // in the session-lock surface).
+        asynchronous: false
+        cache: true
         mipmap: true
         smooth: true
         visible: source !== ""

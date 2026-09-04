@@ -44,7 +44,9 @@ ShellRoot {
             LockSurface {
                 anchors.fill: parent
                 context: lockContext
-                appSettings: appSettings
+                // NOTE: do NOT pass appSettings here — shell-scope ids do not
+                // resolve inside the lock surface (arrives NULL). LockSurface
+                // owns its own Settings instance instead.
             }
         }
     }

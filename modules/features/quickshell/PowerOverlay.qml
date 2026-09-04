@@ -122,7 +122,12 @@ Variants {
                         spacing: 12
 
                         RowLayout {
+                            id: headerRow
                             Layout.fillWidth: true
+                            // Nested RowLayouts keep their implicitWidth inside
+                            // a ColumnLayout even with fillWidth — the width
+                            // must be pinned explicitly (verified offscreen).
+                            Layout.preferredWidth: cardCol.width
                             spacing: 8
                             Text {
                                 Layout.alignment: Qt.AlignVCenter
@@ -153,7 +158,11 @@ Variants {
                             Rectangle {
                                 Layout.preferredWidth: 28
                                 Layout.preferredHeight: 28
-                                Layout.alignment: Qt.AlignVCenter
+                                // Top-right corner, aligned with the title's
+                                // first line (dialog convention). Vertical
+                                // centering against the two-line header left
+                                // it floating mid-block.
+                                Layout.alignment: Qt.AlignTop
                                 radius: 14
                                 color: closeMa.containsMouse ? Qt.lighter(root.cardBg, 1.4) : "transparent"
                                 Text {
