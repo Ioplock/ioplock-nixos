@@ -120,25 +120,18 @@ Variants {
                         anchors.top: parent.top
                         anchors.margins: 14
                         spacing: 12
-
-                        RowLayout {
+                        // Header: plain anchored Item (title left, close
+                        // right). RowLayout quirks (implicitWidth, nested
+                        // fillWidth) made exact placement unreliable.
+                        Item {
                             id: headerRow
                             Layout.fillWidth: true
-                            // Nested RowLayouts keep their implicitWidth inside
-                            // a ColumnLayout even with fillWidth — the width
-                            // must be pinned explicitly (verified offscreen).
-                            Layout.preferredWidth: cardCol.width
-                            spacing: 8
-                            Text {
-                                Layout.alignment: Qt.AlignVCenter
-                                text: "\uF011"
-                                font.family: root.iconFam
-                                font.pixelSize: root.fontSz + 6
-                                color: root.accent
-                            }
+                            implicitHeight: headerText.implicitHeight
+
                             ColumnLayout {
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
+                                id: headerText
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
                                 spacing: 0
                                 Text {
                                     text: "Power"
@@ -155,16 +148,16 @@ Variants {
                                     opacity: 0.5
                                 }
                             }
+
                             Rectangle {
-                                Layout.preferredWidth: 28
-                                Layout.preferredHeight: 28
-                                // Top-right corner, aligned with the title's
-                                // first line (dialog convention). Vertical
-                                // centering against the two-line header left
-                                // it floating mid-block.
-                                Layout.alignment: Qt.AlignTop
+                                id: closeBtn
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 28
+                                height: 28
                                 radius: 14
                                 color: closeMa.containsMouse ? Qt.lighter(root.cardBg, 1.4) : "transparent"
+
                                 Text {
                                     anchors.centerIn: parent
                                     text: "\uF00D"
@@ -173,6 +166,7 @@ Variants {
                                     color: root.textC
                                     opacity: closeMa.containsMouse ? 1.0 : 0.6
                                 }
+
                                 MouseArea {
                                     id: closeMa
                                     anchors.fill: parent
@@ -182,13 +176,16 @@ Variants {
                                 }
                             }
                         }
-
                         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: root.accent; opacity: 0.28 }
 
                         GridView {
                             id: grid
                             Layout.fillWidth: true
                             Layout.preferredHeight: cellHeight * Math.ceil(root.buttons.length / 2)
+                            // Cancel the delegate's internal 6px margin so tile
+                            // borders align flush with the header/divider edges.
+                            Layout.leftMargin: -6
+                            Layout.rightMargin: -6
                             clip: true
                             model: root.buttons
                             cellWidth: width / 2
