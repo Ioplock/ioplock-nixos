@@ -15,6 +15,7 @@
         self.nixosModules.firefox
         self.nixosModules.fonts
         self.nixosModules.git
+        self.nixosModules.libreoffice
         self.nixosModules.micRelay
         self.nixosModules.nh
         self.nixosModules.obsidian

@@ -9,6 +9,11 @@
       # previously relied on a home-manager profile).
       fonts.packages = [
         pkgs.nerd-fonts.jetbrains-mono
+        # MS-metric-compatible document fonts for LibreOffice/Office files.
+        pkgs.liberation_ttf # Times/Arial/Courier clones
+        pkgs.carlito # Calibri-metric clone
+        pkgs.dejavu_fonts
+        pkgs.noto-fonts
       ];
     };
 }
