@@ -59,6 +59,37 @@ systemctl --user -M mimosa@ restart sunshine
 sops-nix is a system unit and cannot restart the user unit directly, hence
 the manual restart.
 
+## Web UI — ports and SSH tunnel
+
+The web UI is the management surface (login credentials, pairing PINs,
+unpairing). Port roles of the Sunshine family (base `port = 47989`):
+
+| Port | Protocol | Purpose |
+|---|---|---|
+| TCP 47990 | HTTPS | **Web UI** (configuration, pairing, troubleshooting) |
+| TCP 47989 | HTTPS | Moonlight API (base port) |
+| TCP 47984 | HTTP | Moonlight API, plaintext |
+| TCP 48010 | TCP+UDP | RTSP stream setup/control |
+| UDP 47998-48000, 48002 | UDP | Video/audio/control streams |
+
+All are opened LAN-wide by `openFirewall = true`; on the LAN just open
+`https://192.168.1.92:47990` (self-signed cert — accept the browser
+warning).
+
+From a PC that cannot reach the LAN, tunnel the UI over SSH:
+
+```bash
+ssh -N -L 47990:localhost:47990 mimosa@192.168.1.92
+# then open https://localhost:47990 on that PC
+```
+
+Keep the local port identical to the remote (47990): Sunshine's CSRF
+protection accepts `https://localhost` origins only with its own UI port by
+default. Tunneling to a different local port (e.g. `-L 8443:localhost:47990`)
+breaks authenticated API calls unless
+`services.sunshine.settings.csrf_allowed_origins = "https://localhost:8443"`
+is added in `sunshine.nix`.
+
 ## Pairing a Moonlight client
 
 1. Launch Moonlight; mimosa appears via mDNS (or add `192.168.1.92` manually).
@@ -66,6 +97,13 @@ the manual restart.
 3. Open `https://192.168.1.92:47990`, log in with the credentials above,
    enter the PIN under PIN tab.
 4. Stream "Desktop". The gaming niri session is already live via autologin.
+
+After the 2026.914 update Moonlight demands re-authorization even for
+previously paired devices (the pairing/auth model changed; server cert and
+device records are untouched). Enter the PIN as usual — but if the web UI
+reports pairing success while Moonlight still shows "not authorized", clear
+all pairings first (Troubleshooting → Unpair Clients → Unpair All) and pair
+every client again. Known upstream issue: LizardByte/Sunshine#5696.
 
 ## Microphone — mic-relay to Mimosa’s virtual mic
 
