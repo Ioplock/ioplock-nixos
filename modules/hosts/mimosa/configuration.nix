@@ -19,6 +19,7 @@
         self.nixosModules.nh
         self.nixosModules.niri
         self.nixosModules.opencode
+        self.nixosModules.qbittorrent
         self.nixosModules.quickshell
         self.nixosModules.rofi
         self.nixosModules.shell
@@ -167,6 +168,14 @@ Ho4zRJEIXy8O
           openFirewall = true;
           mdns = true;
         };
+      };
+
+      # ==================================================
+      # qBittorrent — headless service, WebUI at localhost:8085
+      # ==================================================
+      myQbittorrent = {
+        enable = true;
+        openFirewall = true;
       };
 
       # ==================================================

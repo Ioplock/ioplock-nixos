@@ -20,6 +20,7 @@
         self.nixosModules.nh
         self.nixosModules.obsidian
         self.nixosModules.opencode
+        self.nixosModules.qbittorrent
         self.nixosModules.quickshell
         self.nixosModules.rofi
         self.nixosModules.singBox
@@ -105,6 +106,14 @@
       myMicRelay = {
         enable = true;
         role = "client";
+      };
+
+      # ==================================================
+      # qBittorrent — headless service, WebUI at localhost:8085
+      # ==================================================
+      myQbittorrent = {
+        enable = true;
+        openFirewall = true;
       };
 
       # ==================================================
