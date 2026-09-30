@@ -12,7 +12,7 @@ and encodes with the RX 5700 XT's VA-API.
 |---|---|---|
 | Feature module | `modules/features/sunshine.nix` | `nixosModules.sunshine`, imported by mimosa only |
 | Upstream NixOS module | `services.sunshine` | systemd **user** service bound to `graphical-session.target`; uwsm activates that target for the greetd autologin niri session |
-| Capture | KMS via CAP_SYS_ADMIN | `capSysAdmin = true`; no physical screen needed |
+| Capture | wlgrab (wlr-screencopy), forced via `settings.capture = "wlr"` | automatic probing hangs on 2026.914 — see [Sunshine 2026.914 startup-hang regression](#sunshine-2026914-startup-hang-regression) |
 | Encoder | VA-API auto-detect | `adapter_name` unset on purpose |
 | Firewall | TCP 47984/47989/47990/48010, UDP 47998-48000/48002/48010 | opened by `openFirewall = true` |
 | Discovery | mDNS | avahi advertisement enabled by the module |
@@ -88,6 +88,35 @@ select **`MicRelay`** (or `MicRelayMic` alt) as mic in game/Discord (`MicRelay.m
 
 See `docs/mic-relay.md` for protocol, Windows cross-build, and
 `pactl`/`pw-record` verification.
+
+## Sunshine 2026.914 startup-hang regression
+
+The 2026-09-29 nixpkgs bump on mimosa (flake.lock `ec2d622` → `b4fd65b`)
+moved Sunshine 2026.516 → 2026.914.233613. New releases probe capture
+backends at startup with privileges already dropped; the probe creates an
+XDG portal RemoteDesktop session, which niri (via xdg-desktop-portal-gnome)
+cannot fulfil, and Sunshine then blocks forever: the unit looks `active`,
+but no ports bind (47984/47989/47990/48010) and nothing is advertised via
+mDNS, so Moonlight sees no host. Upstream: LizardByte/Sunshine#5725, #5785.
+
+Diagnosis signature: `journalctl --user -u sunshine` stops right after
+`[portalgrab] RemoteDesktop CreateSession failed with response code: 2`
+with no "Configuration UI available" line, and `ss -tln` shows no Sunshine
+ports.
+
+Fix (already in `sunshine.nix`): `settings.capture = "wlr"` — the
+wlr-screencopy backend this host auto-selected before the update
+("Screencasting with Wayland's protocol"). KMS cannot be forced instead:
+the new privilege model loses `cap_sys_admin` in the capture worker
+(#5803), so KMS probes log "Failed to gain CAP_SYS_ADMIN". Remove the
+setting once upstream fixes the startup probe.
+
+Related: a stale `~/.config/sunshine/portal_token` is upstream's known
+trigger for portal-capture breakage; deleting it is the documented manual
+recovery (2026.914 added a web-UI token reset for this — PR #5701). The
+appdata `~/.config/sunshine/sunshine.conf` is only read when Sunshine is
+started without a config-file argument, so settings must go through
+`services.sunshine.settings`.
 
 ## Declarative-settings tradeoff
 

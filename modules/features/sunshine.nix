@@ -41,6 +41,18 @@
           # docs/remote-gaming.md — the hashing scheme is version-specific).
           # Pairing state lives separately in ~/.config/sunshine/sunshine_state.json.
           credentials_file = config.sops.secrets.sunshine-credentials.path;
+
+          # Sunshine >= 2026.914 probes capture backends at startup with
+          # privileges already dropped; the probe creates an XDG portal
+          # RemoteDesktop session that niri (via xdg-desktop-portal-gnome)
+          # cannot fulfil and then blocks forever — the unit looks active but
+          # binds no ports, so Moonlight cannot connect
+          # (upstream LizardByte/Sunshine#5725, #5785). Forcing wlr — the
+          # wlgrab backend this host auto-selected before the update — skips
+          # the portal probe entirely. KMS cannot be forced instead: the new
+          # privilege model loses cap_sys_admin in the capture worker
+          # (#5803). Remove this key once upstream fixes the startup hang.
+          capture = "wlr";
         };
 
         # Declarative app list replacing Sunshine's stock defaults. The stock
