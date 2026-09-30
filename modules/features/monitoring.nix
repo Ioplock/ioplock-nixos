@@ -47,24 +47,19 @@
           # it OOM-crashed acrux, and anomaly detection is not needed for
           # temperature/load history.
           #
-          # overrideAttrs: nixpkgs rewrites the vendored GOPROXY only in
-          # NetdataGoTools.cmake, but the snmp-trap-profile-pack target in the
-          # root CMakeLists.txt hardcodes proxy.golang.org — unreachable from
-          # the build sandbox. Point it at the same local Go vendor dir.
-          package = (pkgs.netdata.override {
+          # nixpkgs rewrites the vendored GOPROXY in both NetdataGoTools.cmake
+          # and the root CMakeLists.txt (snmp-trap-profile-pack target) to a
+          # local Go vendor dir since PR #559221 (2026-09-14) — no patching
+          # needed here. Patching it ourselves would collide with nixpkgs'
+          # --replace-fail and break the build.
+          package = pkgs.netdata.override {
             withCloudUi = true;
             withML = false;
             # ndsudo is netdata's SUID-root exec helper (whitelisted commands
             # only). Needed so the built-in smartctl collector can read drive
             # SMART data; fed smartctl via extraNdsudoPackages below.
             withNdsudo = true;
-          }).overrideAttrs (finalAttrs: prevAttrs: {
-            postPatch = (prevAttrs.postPatch or "") + ''
-              substituteInPlace CMakeLists.txt \
-                --replace-fail 'GOPROXY=https://proxy.golang.org' \
-                  'GOPROXY=file://${finalAttrs.passthru.netdata-go-modules}'
-            '';
-          });
+          };
           # The NixOS module leaves the listen address at upstream default;
           # make LAN exposure explicit instead of relying on it.
           config."web" = {
