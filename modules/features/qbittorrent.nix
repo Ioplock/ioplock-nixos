@@ -9,6 +9,7 @@
     }:
     let
       cfg = config.myQbittorrent;
+      myQbtAdd = self.packages.${pkgs.stdenv.hostPlatform.system}.myQbtAdd;
     in
     {
       options.myQbittorrent = {
@@ -75,6 +76,7 @@
 
         environment.systemPackages = [
           pkgs.xdg-utils
+          myQbtAdd
           (pkgs.makeDesktopItem {
             name = "qbittorrent-webui";
             desktopName = "qBittorrent WebUI";
@@ -86,7 +88,109 @@
               "FileTransfer"
             ];
           })
+          # Hidden MIME handler: .torrent files and magnet: links open straight
+          # into the local qBittorrent service via its WebUI API.
+          (pkgs.makeDesktopItem {
+            name = "qbittorrent-add";
+            desktopName = "qBittorrent (add torrent)";
+            comment = "Add a torrent or magnet link to the qBittorrent service";
+            exec = "${lib.getExe myQbtAdd} -u http://127.0.0.1:${toString cfg.webuiPort} %U";
+            icon = "${pkgs.qbittorrent}/share/icons/hicolor/scalable/apps/qbittorrent.svg";
+            noDisplay = true;
+            terminal = false;
+            mimeTypes = [
+              "application/x-bittorrent"
+              "x-scheme-handler/magnet"
+            ];
+            categories = [
+              "Network"
+              "FileTransfer"
+            ];
+          })
         ];
+
+        xdg.mime = {
+          enable = true;
+          defaultApplications = {
+            "application/x-bittorrent" = "qbittorrent-add.desktop";
+            "x-scheme-handler/magnet" = "qbittorrent-add.desktop";
+          };
+        };
+      };
+    };
+
+  perSystem =
+    { pkgs, ... }:
+    {
+      packages.myQbtAdd = pkgs.writeShellApplication {
+        name = "my-qbt-add";
+        meta.mainProgram = "my-qbt-add";
+        runtimeInputs = with pkgs; [
+          curl
+          libnotify
+        ];
+        text = ''
+          usage() {
+            echo "usage: my-qbt-add [-u <webui-base-url>] <magnet-url|torrent-file|torrent-url>..." >&2
+          }
+
+          base="http://127.0.0.1:8085"
+          while getopts "u:" opt; do
+            case "$opt" in
+              u)
+                base="$OPTARG"
+                ;;
+              *)
+                usage
+                exit 2
+                ;;
+            esac
+          done
+          shift $((OPTIND - 1))
+
+          if [ "$#" -lt 1 ]; then
+            usage
+            exit 2
+          fi
+
+          fail() {
+            echo "$1" >&2
+            notify-send -u critical "qBittorrent" "$1" 2>/dev/null || true
+            exit 1
+          }
+
+          for target in "$@"; do
+            path="''${target#file://}"
+            if [ ! -f "$path" ]; then
+              # Percent-encoded fallback (file:///home/user/My%20Files/x.torrent)
+              printf -v decoded '%b' "''${path//%/\x}"
+              if [ -f "$decoded" ]; then
+                path="$decoded"
+              fi
+            fi
+
+            if [ -f "$path" ]; then
+              code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                -F "torrents=@''${path}" \
+                "''${base}/api/v2/torrents/add") ||
+                fail "Cannot reach the WebUI at ''${base}"
+            else
+              code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                --data-urlencode "urls=''${target}" \
+                "''${base}/api/v2/torrents/add") ||
+                fail "Cannot reach the WebUI at ''${base}"
+            fi
+
+            case "$code" in
+              2??)
+                notify-send "qBittorrent" "Added: ''${target}" 2>/dev/null || true
+                ;;
+              *)
+                fail "Failed to add (HTTP ''${code}): ''${target}"
+                ;;
+            esac
+          done
+        '';
       };
     };
 }
