@@ -53,6 +53,18 @@
           # privilege model loses cap_sys_admin in the capture worker
           # (#5803). Remove this key once upstream fixes the startup hang.
           capture = "wlr";
+
+          # The 2026.914 CSRF middleware allows only https://localhost origins
+          # by default. Browsing the UI via the LAN address sends
+          # Origin: https://192.168.1.92:47990 and state-changing requests
+          # (login, PIN submit) get blocked ("add it to csrf_allowed_origins").
+          # The Origin header is the SERVER's URL — identical for every
+          # client PC on the subnet — so this single entry unlocks LAN-wide
+          # access. Prefix matching requires the full host followed by ':' or
+          # '/', so a subnet prefix like https://192.168.1. would be rejected;
+          # extra origins (e.g. an mDNS name) go comma-separated, each must
+          # start with https://.
+          csrf_allowed_origins = "https://192.168.1.92";
         };
 
         # Declarative app list replacing Sunshine's stock defaults. The stock

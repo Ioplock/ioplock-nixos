@@ -83,12 +83,18 @@ ssh -N -L 47990:localhost:47990 mimosa@192.168.1.92
 # then open https://localhost:47990 on that PC
 ```
 
-Keep the local port identical to the remote (47990): Sunshine's CSRF
-protection accepts `https://localhost` origins only with its own UI port by
-default. Tunneling to a different local port (e.g. `-L 8443:localhost:47990`)
-breaks authenticated API calls unless
-`services.sunshine.settings.csrf_allowed_origins = "https://localhost:8443"`
-is added in `sunshine.nix`.
+Any `https://localhost` origin is allowed by default (any port), so the
+tunnel works regardless of the chosen local port. Browsing via the LAN
+address instead — `https://192.168.1.92:47990` — is NOT: the 2026.914 CSRF
+protection allows only `https://localhost` origins by default, so
+state-changing requests (login, PIN verification) from LAN browsers get
+blocked with a "CSRF Protection Error". `sunshine.nix` therefore sets
+`csrf_allowed_origins = "https://192.168.1.92"` — the Origin header is the
+server's URL, identical for every client PC on the subnet, so this single
+entry unlocks LAN-wide access. Sunshine's matcher requires the full host
+followed by `:` or `/` (a subnet prefix like `https://192.168.1.` is
+rejected); extra origins (e.g. an mDNS name) go comma-separated into the
+same key, each must start with `https://`.
 
 ## Pairing a Moonlight client
 
