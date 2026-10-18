@@ -65,6 +65,16 @@
 
       swapDevices = [
         { device = "/dev/disk/by-uuid/70725dbc-8205-43b1-ab0b-9bd1afb9a849"; }
+        # 32 GiB swapfile on the root filesystem (Kingston SA400, ~117 GiB
+        # free). Gives ~48 GiB total commit with RAM so Transport Fever 3
+        # (~12 GiB RSS + ~6 GiB already swapped at peak) no longer trips the
+        # kernel OOM killer mid-session. Created automatically on first boot
+        # after switching; see also zramSwap in configuration.nix.
+        {
+          device = "/var/swapfile";
+          size = 32768;
+          priority = 10;
+        }
       ];
 
       # Enables DHCP on each ethernet and wireless interface. In case of scripted networking

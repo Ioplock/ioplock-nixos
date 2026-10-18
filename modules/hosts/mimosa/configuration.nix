@@ -96,6 +96,29 @@ Ho4zRJEIXy8O
       ];
 
       # ==================================================
+      # Memory / swap
+      # ==================================================
+      # Fast compressed swap tier, filled before disk swap (priority 100 vs
+      # disk's 10/-2). Absorbs burst reclaim during gaming at RAM speed so
+      # the 5–7 s freezes from pure SATA-swap thrash get shorter. Disk
+      # overflow lives in hardware.nix: /var/swapfile (32 GiB) + the 8 GiB
+      # partition. memoryPercent=25 → ~4 GiB zram device (~1–2 GiB actual
+      # RAM when well compressed); avoids the 50 % default eating too much
+      # of a 16 GiB box.
+      zramSwap = {
+        enable = true;
+        memoryPercent = 25;
+        priority = 100;
+      };
+
+      # Last-resort backstop: if the user session (game + Steam + desktop)
+      # ever exceeds ~15 GiB, apply reclaim pressure *within user.slice only*.
+      # MemoryHigh never kills — the game degrades instead of OOM, and
+      # system.slice (sshd, journald, NetworkManager) stays out of the blast
+      # radius thanks to MemoryLow/MemoryMin set in the ssh feature.
+      systemd.slices."user.slice".sliceConfig.MemoryHigh = "15G";
+
+      # ==================================================
       # Networking
       # ==================================================
       networking.hostName = "mimosa"; # Define your hostname.

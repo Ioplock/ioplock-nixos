@@ -28,5 +28,15 @@
           }
         ];
       };
+
+      # Keep SSH reachable during swap-thrash storms: hard floor so reclaim
+      # never pages sshd out, and soft protection so system.slice is preferred
+      # over user.slice when the kernel is under pressure. Without this the
+      # whole box (including sshd) stalls when a game exhausts RAM+swap.
+      systemd.services.sshd.serviceConfig = {
+        MemoryMin = "64M";
+        MemoryLow = "64M";
+      };
+      systemd.slices."system.slice".sliceConfig.MemoryLow = "256M";
     };
 }
