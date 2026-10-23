@@ -14,6 +14,7 @@
         self.nixosModules.firefox
         self.nixosModules.fonts
         self.nixosModules.git
+        self.nixosModules.memory
         self.nixosModules.micRelay
         self.nixosModules.monitoring
         self.nixosModules.nh
@@ -98,25 +99,15 @@ Ho4zRJEIXy8O
       # ==================================================
       # Memory / swap
       # ==================================================
-      # Fast compressed swap tier, filled before disk swap (priority 100 vs
-      # disk's 10/-2). Absorbs burst reclaim during gaming at RAM speed so
-      # the 5–7 s freezes from pure SATA-swap thrash get shorter. Disk
-      # overflow lives in hardware.nix: /var/swapfile (32 GiB) + the 8 GiB
-      # partition. memoryPercent=25 → ~4 GiB zram device (~1–2 GiB actual
-      # RAM when well compressed); avoids the 50 % default eating too much
-      # of a 16 GiB box.
-      zramSwap = {
+      # zram fast tier + user.slice backstop come from the shared
+      # memory feature (modules/features/memory.nix). Disk overflow
+      # lives in hardware.nix: /var/swapfile (32 GiB) + the 8 GiB
+      # partition; sshd/system.slice floors come from the ssh feature.
+      myMemory = {
         enable = true;
-        memoryPercent = 25;
-        priority = 100;
+        zramMemoryPercent = 25; # ~4 GiB zram device (~1–2 GiB actual RAM when well compressed)
+        userSliceMemoryHigh = "15G"; # game + Steam + desktop session degrades instead of OOM
       };
-
-      # Last-resort backstop: if the user session (game + Steam + desktop)
-      # ever exceeds ~15 GiB, apply reclaim pressure *within user.slice only*.
-      # MemoryHigh never kills — the game degrades instead of OOM, and
-      # system.slice (sshd, journald, NetworkManager) stays out of the blast
-      # radius thanks to MemoryLow/MemoryMin set in the ssh feature.
-      systemd.slices."user.slice".sliceConfig.MemoryHigh = "15G";
 
       # ==================================================
       # Networking

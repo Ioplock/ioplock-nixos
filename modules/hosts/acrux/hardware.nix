@@ -44,6 +44,17 @@
 
       swapDevices = [
         { device = "/dev/disk/by-uuid/c5c269a5-243a-4dfd-837e-301fb4847208"; }
+        # 16 GiB swapfile on the root filesystem (NVMe, ~189 GiB free).
+        # With 7.2 GiB RAM the 1.9 GiB partition alone let Docker +
+        # Firefox + qBittorrent exhaust swap and freeze the box; this
+        # gives ~19 GiB total commit with RAM so reclaim never stalls.
+        # Created automatically on first boot after switching; see also
+        # zramSwap in configuration.nix (memory feature).
+        {
+          device = "/var/swapfile";
+          size = 16384;
+          priority = 10;
+        }
       ];
 
       # Enables DHCP on each ethernet and wireless interface. In case of scripted networking

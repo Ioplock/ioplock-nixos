@@ -16,6 +16,7 @@
         self.nixosModules.fonts
         self.nixosModules.git
         self.nixosModules.libreoffice
+        self.nixosModules.memory
         self.nixosModules.micRelay
         self.nixosModules.nh
         self.nixosModules.obsidian
@@ -58,6 +59,21 @@
       # Use the systemd-boot EFI boot loader.
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
+
+      # ==================================================
+      # Memory / swap
+      # ==================================================
+      # Same protection as mimosa, scaled to this 7.2 GiB box: zram fast
+      # tier + user.slice backstop from the shared memory feature. Disk
+      # overflow lives in hardware.nix: /var/swapfile (16 GiB) + the
+      # 1.9 GiB partition; sshd/system.slice floors come from the ssh
+      # feature. Without this, Docker + Firefox + qBittorrent exhausted
+      # RAM + the tiny 1.9 GiB partition and the whole box froze.
+      myMemory = {
+        enable = true;
+        zramMemoryPercent = 25; # ~1.8 GiB zram device
+        userSliceMemoryHigh = "6G"; # desktop session degrades instead of OOM, ~1.2 GiB left for system.slice
+      };
 
       # ==================================================
       # Networking
