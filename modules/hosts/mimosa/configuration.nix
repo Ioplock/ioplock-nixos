@@ -27,6 +27,7 @@
         self.nixosModules.neovim
         self.nixosModules.singBox
         self.nixosModules.sops
+        self.nixosModules.traefik
         self.nixosModules.ssh
         self.nixosModules.steam
         self.nixosModules.sunshine
@@ -87,7 +88,9 @@
       # Set your time zone.
       time.timeZone = "Europe/Moscow";
 
-      # Firewall: server exposes SSH only.
+      # Firewall: SSH for management; TCP 80/443 and the 8080 dashboard are
+      # opened by myTraefik.openFirewall (80/443 are forwarded from the
+      # router; 8080 stays LAN-only).
       networking.firewall = {
         enable = true;
         allowedTCPPorts = [ 22 ];
@@ -112,6 +115,7 @@
         extraGroups = [
           "wheel"
           "input"
+          "docker"
         ];
         authorizedKeys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO2reTQCZyP5XULzWNsQ0iVGxwYylpkW8xuK1hG+DaE9 ioplock.me@gmail.com"
@@ -159,6 +163,30 @@
       myQbittorrent = {
         enable = true;
         openFirewall = true;
+      };
+
+      # ==================================================
+      # Docker — rootful, so the system-level Traefik service can
+      # use /run/docker.sock (see myTraefik below).
+      # ==================================================
+      # The user needs the docker group to run compose without sudo.
+      # After switching from rootless docker, existing compose stacks
+      # must be brought up again against the system daemon.
+      myDocker = {
+        enable = true;
+        mode = "rootful";
+      };
+
+      # ==================================================
+      # Traefik — system reverse proxy in front of docker compose stacks.
+      # Exposes any stack carrying traefik.enable=true labels; issues
+      # Let's Encrypt certificates automatically for the routers' Host()
+      # domains (HTTP-01 over port 80).
+      # ==================================================
+      myTraefik = {
+        enable = true;
+        openFirewall = true;
+        dashboard = true;
       };
 
       # ==================================================
