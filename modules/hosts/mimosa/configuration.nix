@@ -34,6 +34,7 @@
         self.nixosModules.user
         self.nixosModules.vscode
         self.nixosModules.yazi
+        self.nixosModules.zapret
       ];
 
       # ==================================================
