@@ -1,9 +1,32 @@
 { self, inputs, ... }:
 {
+  perSystem =
+    { pkgs, ... }:
+    {
+      packages.myYoutrack = pkgs.youtrack.override {
+        dockerTools = pkgs.dockerTools // {
+          # Docker Hub TLS times out on Mimosa; use Google's mirror without
+          # a daemon proxy. Keep nixpkgs' digest and archive hash.
+          # Preserve the archive name too: it is part of the hashed contents.
+          # See docs/youtrack.md for the decision and upgrade checks.
+          pullImage =
+            args:
+            pkgs.dockerTools.pullImage (
+              args
+              // {
+                imageName = "mirror.gcr.io/${args.imageName}";
+                finalImageName = args.finalImageName or args.imageName;
+              }
+            );
+        };
+      };
+    };
+
   flake.nixosModules.youtrack =
     {
       config,
       lib,
+      pkgs,
       ...
     }:
     let
@@ -65,6 +88,7 @@
       config = lib.mkIf cfg.enable {
         services.youtrack = {
           enable = true;
+          package = self.packages.${pkgs.stdenv.hostPlatform.system}.myYoutrack;
           # virtualHost stays null: nginx is not used, Traefik is the edge.
           environmentalParameters = {
             listen-address = cfg.listenAddress;

@@ -195,7 +195,8 @@
       # ==================================================
       # YouTrack — native services.youtrack (NOT Docker).
       # The nixpkgs package builds from the jetbrains/youtrack
-      # image via a Nix fixed-output fetch, so no docker pull
+      # image via Google's mirror (see docs/youtrack.md) and
+      # a Nix fixed-output fetch, so no docker pull
       # is involved. Traefik routes youtrack.ioplock.su to the
       # loopback port when myTraefik (services.traefik) is on.
       # Minimal profile: 768m heap, 1G cgroup cap — raise the
