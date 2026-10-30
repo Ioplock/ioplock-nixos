@@ -16,6 +16,7 @@
         self.nixosModules.git
         self.nixosModules.memory
         self.nixosModules.micRelay
+        self.nixosModules.modioSplit
         self.nixosModules.monitoring
         self.nixosModules.nh
         self.nixosModules.niri
@@ -189,6 +190,13 @@
         openFirewall = true;
         dashboard = true;
       };
+
+      # ==================================================
+      # mod.io split-routing — TUN for TF3 Mod Center (Proton ignores proxy)
+      # ==================================================
+      # Requires singBox+sops (imported above). Only mod.io/modapi.io/modcdn
+      # go through `proxy`; remaining TUN traffic stays `direct`.
+      myModioSplit.enable = true;
 
       # ==================================================
       # Monitoring
