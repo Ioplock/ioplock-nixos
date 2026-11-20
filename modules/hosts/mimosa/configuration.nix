@@ -35,6 +35,7 @@
         self.nixosModules.sunshine
         self.nixosModules.user
         self.nixosModules.vscode
+        self.nixosModules.wivrn
         self.nixosModules.yazi
         self.nixosModules.youtrack
         self.nixosModules.zapret
