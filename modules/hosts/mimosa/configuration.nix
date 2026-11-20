@@ -7,7 +7,6 @@
       # import any other modules from here
       imports = [
         self.nixosModules.mimosaHardware
-        self.nixosModules.alvr
         self.nixosModules.audio
         self.nixosModules.cliphist
         self.nixosModules.cursor
@@ -32,6 +31,7 @@
         self.nixosModules.traefik
         self.nixosModules.ssh
         self.nixosModules.steam
+        self.nixosModules.steamVr
         self.nixosModules.sunshine
         self.nixosModules.user
         self.nixosModules.vscode
