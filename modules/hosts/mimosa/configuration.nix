@@ -7,6 +7,7 @@
       # import any other modules from here
       imports = [
         self.nixosModules.mimosaHardware
+        self.nixosModules.alvr
         self.nixosModules.audio
         self.nixosModules.cliphist
         self.nixosModules.cursor
