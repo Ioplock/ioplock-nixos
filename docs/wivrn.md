@@ -28,7 +28,13 @@ lists manually added Steam shortcuts when their `OpenVR` flag is enabled. Alyx
 is marked as VR so it can be launched from the headset; desktop Steam also works.
 Restart Steam and reconnect WiVRn after changing a shortcut's VR flag.
 
-For the existing **Half Life Alyx.exe** shortcut, the launch options are:
+WiVRn reads `shortcuts.vdf` only for the account flagged `MostRecent` in
+`~/.local/share/Steam/config/loginusers.vdf` (falling back to the file's last
+entry when no flag exists). If a VR shortcut lives under another account,
+set `MostRecent` on that account with Steam closed, then restart `wivrn`, or
+the headset menu will not list the game.
+
+For the **Half-Life: Alyx** shortcut (AppID 3720310538), the launch options are:
 
 ```text
 OXR_RECENTER_STAGE=1 PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command% -vr
@@ -39,6 +45,16 @@ a new login picks up the feature's session environment variable. Other Steam
 games normally need no extra runtime option after a new login.
 `OXR_RECENTER_STAGE=1` is the [upstream workaround](https://github.com/WiVRn/WiVRn/issues/806#issuecomment-3957832997)
 for OpenVR games that ignore the headset's recenter action.
+
+## Shortcut artwork and icon
+
+The shortcut is named **Half-Life: Alyx** instead of the raw `.exe` name. Its
+source artwork is kept in `~/.local/share/Steam/custom-artwork/half-life-alyx/`
+(icon referenced by the shortcut's `Icon` field). Custom library assets are
+installed as `~/.local/share/Steam/userdata/<account>/config/grid/` files named
+after the AppID: `3720310538.jpg` (landscape), `3720310538_p.jpg` (portrait),
+`3720310538_header.jpg`, `3720310538_hero.jpg`, and `3720310538_logo.png`.
+Restart Steam after replacing them.
 
 For audio, select WiVRn's virtual output/input while the headset is connected.
 Start with the headset application's default bitrate and resolution; adjust
