@@ -8,6 +8,7 @@
       imports = [
         self.nixosModules.mimosaHardware
         self.nixosModules.audio
+        self.nixosModules.caratDeploy
         self.nixosModules.cliphist
         self.nixosModules.cursor
         self.nixosModules.docker
@@ -192,6 +193,22 @@
         enable = true;
         openFirewall = true;
         dashboard = true;
+      };
+
+      # ==================================================
+      # Carat CD - restricted CI deploy hook
+      # ==================================================
+      # GitHub Actions can only signal "pull + restart" for the Carat stack
+      # in /etc/carat: the deploy key is bound to a forced command, the
+      # carat-ci user holds exactly one sudo rule, and the compose file is
+      # root-owned outside any repository. See docs/carat-deploy.md.
+      myCaratDeploy = {
+        enable = true;
+        deployPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN895Cg/OTCIwPgrnKdA2+yWpCAqG3B4Fnu857fpnA8l carat-deploy-ghactions";
+        # Hard caps: carat.slice throttles at 4G and OOM-kills the stack at
+        # 6G; data is capped by the 10G loop filesystem (docs/carat-deploy.md).
+        memoryHigh = "4G";
+        memoryMax = "6G";
       };
 
       # ==================================================
