@@ -201,6 +201,9 @@
         enable = true;
         openFirewall = true;
         dashboard = true;
+        # The provider blocks inbound 443: the router forwards external 8443
+        # to this host's 443, so the port-80 redirect must name 8443.
+        websecurePort = 8443;
       };
 
       # ==================================================
