@@ -27,6 +27,18 @@
             the myTraefik feature.
           '';
         };
+
+        registryMirrors = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ ];
+          description = ''
+            registry-mirrors for the rootful Docker daemon: pull-through
+            mirrors for docker.io, tried in order before docker.io itself.
+            Needed where auth.docker.io is unreachable. Only docker.io pulls
+            are affected - images from other registries (ghcr.io) go straight
+            to their origin. Empty list keeps the upstream behaviour.
+          '';
+        };
       };
 
       config = lib.mkIf cfg.enable {
@@ -37,6 +49,10 @@
 
         # Rootful: system daemon exposing /run/docker.sock to the docker group.
         virtualisation.docker.enable = cfg.mode == "rootful";
+
+        virtualisation.docker.daemon.settings = lib.mkIf (cfg.registryMirrors != [ ]) {
+          "registry-mirrors" = cfg.registryMirrors;
+        };
 
         # Rootless: user-units daemon, exactly the previous behaviour.
         virtualisation.docker.rootless = lib.mkIf (cfg.mode == "rootless") {

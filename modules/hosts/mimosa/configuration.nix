@@ -181,6 +181,14 @@
       myDocker = {
         enable = true;
         mode = "rootful";
+        # auth.docker.io is unreachable from this network (TCP connect
+        # timeout on 104.18.43.178 and the IPv6 twin), so docker.io images
+        # are pulled through mirrors instead. ghcr.io (the Carat images)
+        # bypasses this list entirely.
+        registryMirrors = [
+          "https://mirror.gcr.io"
+          "https://dockerhub.timeweb.cloud"
+        ];
       };
 
       # ==================================================
