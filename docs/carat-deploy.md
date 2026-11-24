@@ -66,6 +66,11 @@ first. CPU is not limited.
 
 ## Routing (single domain, no CORS)
 
+- External access uses port **8443**: the provider blocks inbound 443 and the
+  router forwards 8443 -> the host's 443 where traefik listens, so every
+  public URL is `https://carat.ioplock.su:8443/...`. `Host()` rules are
+  port-independent, so the labels carry no port. The port-80 redirect still
+  targets 443 (unreachable from outside) - unchanged upstream behaviour.
 - `Host(carat.ioplock.su)` + `PathPrefix(/api, /health, /docs, /openapi.json,
   /redoc)` -> backend container, port 8080, priority 10.
 - Everything else on that host: redirect `/` -> `/docs` (FastAPI Swagger),
@@ -90,8 +95,8 @@ cat /proc/$(sudo docker inspect -f '{{.State.Pid}}' carat-backend)/cgroup
 systemctl list-timers carat-gc.timer --no-pager
 
 # from outside
-curl -fsS https://carat.ioplock.su/health     # {"status":"ok"}
-curl -sI https://carat.ioplock.su/            # redirect to /docs
+curl -fsS https://carat.ioplock.su:8443/health  # {"status":"ok"}
+curl -sI https://carat.ioplock.su:8443/        # redirect to /docs
 
 # isolation tests: every one of these must NOT run the command you typed
 ssh -p 9922 carat-ci@78.107.234.81 id
