@@ -21,7 +21,7 @@ release.yml (build-latest -> deploy job)
   carat-deploy.service       (oneshot, root, requires docker.service)
       cd /etc/carat && docker-compose pull && up -d && ps
       v
-  traefik sees the labels -> carat.ioplock.su:8443 (ACME HTTP-01 via external :80) -> backend:8080
+  traefik sees the labels -> carat.ioplock.su (ACME HTTP-01) -> backend:8080
 ```
 
 ## What is where
@@ -66,12 +66,6 @@ first. CPU is not limited.
 
 ## Routing (single domain, no CORS)
 
-- External port is **8443**: the provider blocks inbound 443 (external scan
-  times out), the router forwards 8443 -> the host's 443 where traefik
-  listens. Every public URL is `https://carat.ioplock.su:8443/...`, and
-  `myTraefik.websecurePort = 8443` keeps the port-80 redirect pointing at
-  that port. ACME HTTP-01 runs over the external 80, which is open.
-  `Host()` rules are port-independent, so the labels carry no port.
 - `Host(carat.ioplock.su)` + `PathPrefix(/api, /health, /docs, /openapi.json,
   /redoc)` -> backend container, port 8080, priority 10.
 - Everything else on that host: redirect `/` -> `/docs` (FastAPI Swagger),
@@ -96,9 +90,8 @@ cat /proc/$(sudo docker inspect -f '{{.State.Pid}}' carat-backend)/cgroup
 systemctl list-timers carat-gc.timer --no-pager
 
 # from outside
-curl -fsS https://carat.ioplock.su:8443/health  # {"status":"ok"}
-curl -sI http://carat.ioplock.su/              # 30x to https://...:8443/
-curl -sI https://carat.ioplock.su:8443/        # redirect to /docs
+curl -fsS https://carat.ioplock.su/health     # {"status":"ok"}
+curl -sI https://carat.ioplock.su/            # redirect to /docs
 
 # isolation tests: every one of these must NOT run the command you typed
 ssh -p 9922 carat-ci@78.107.234.81 id

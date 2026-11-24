@@ -32,19 +32,6 @@
           '';
         };
 
-        websecurePort = lib.mkOption {
-          type = lib.types.nullOr lib.types.port;
-          default = null;
-          description = ''
-            External port of the websecure entrypoint, when the provider
-            blocks 443 and traffic arrives on a different port (mimosa: 8443
-            forwarded to the internal 443). When set, the permanent redirect
-            generated for the web entrypoint points at https://<host>:<port>
-            instead of the unreachable default 443. null keeps the upstream
-            behaviour.
-          '';
-        };
-
         acmeEmail = lib.mkOption {
           type = lib.types.str;
           default = "ioplock.me@gmail.com";
@@ -97,15 +84,11 @@
                 address = ":80";
                 # ACME HTTP-01 on web stays working: the internal ACME
                 # challenge router has the highest priority and is
-                # unaffected by this permanent redirect. With a blocked
-                # external 443 the redirect must name the forwarded port
-                # (websecurePort) or it would send clients into a dead end.
+                # unaffected by this permanent redirect.
                 http.redirections.entryPoint = {
                   to = "websecure";
                   scheme = "https";
                   permanent = true;
-                } // lib.optionalAttrs (cfg.websecurePort != null) {
-                  port = cfg.websecurePort;
                 };
               };
               websecure = {

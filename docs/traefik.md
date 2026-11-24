@@ -6,7 +6,7 @@ with traefik labels. Any compose stack you bring up with the right labels is
 exposed automatically.
 
 ```
-internet ──► router (forwards TCP 80 + 8443 -> 443) ──► mimosa ──► Traefik ──► docker containers
+internet ──► router (forwards TCP 80 + 443) ──► mimosa ──► Traefik ──► docker containers
                                               │
 LAN PC ────────────────────────────────────────┤► dashboard http://<mimosa-ip>:8080/
                                                └► direct ports (qBittorrent 8085, netdata 19999, …)
@@ -22,13 +22,10 @@ LAN PC ────────────────────────�
 
 ## Requirements for it to work
 
-1. **Router port forwarding** — forward TCP **80** and **8443** (to mimosa's
-   443) to mimosa. The provider blocks inbound 443, so the external TLS port
-   is 8443 and public URLs carry it: `https://<host>:8443/...`.
+1. **Router port forwarding** — forward TCP **80** and **443** to mimosa.
    Port 80 is used by Let's Encrypt (HTTP-01 challenge) and by the
-   HTTP→HTTPS redirect; set `myTraefik.websecurePort = 8443` so that
-   redirect names the reachable port instead of the blocked 443.
-   Do **not** forward 8080.
+   HTTP→HTTPS redirect; 443 serves the actual TLS traffic. Do **not**
+   forward 8080.
 2. **DNS** — an A record pointing to your public IP, per service:
    `plane.ioplock.su`, `app2.ioplock.su`, …
 3. **Labels on the compose service** — see below.
