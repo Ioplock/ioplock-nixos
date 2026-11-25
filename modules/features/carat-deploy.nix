@@ -15,7 +15,11 @@
       signal = pkgs.writeShellApplication {
         name = "carat-deploy-signal";
         text = ''
-          exec ${pkgs.sudo}/bin/sudo -n ${lib.getExe trigger}
+          # Must be the setuid wrapper (/run/wrappers/bin/sudo, mode 4511),
+          # not the store sudo: the bare store binary is mode 0555 and sudo
+          # refuses to run without the setuid bit ("must be owned by uid 0
+          # and have the setuid bit set").
+          exec /run/wrappers/bin/sudo -n ${lib.getExe trigger}
         '';
       };
 
