@@ -10,6 +10,43 @@
   (Russian). Verdict there: **strategies are NOT the culprit**, do not change
   `zapret-cfg`.
 
+## Follow-up: interface filter was insufficient (2026-11-25)
+
+`/tmp/cf-ab-result-2.txt` on mimosa confirms that the deployed
+`firewall.interfaces = [ "enp5s0" ]` adds `oifname`/`iifname` to all queue
+rules. Nevertheless, LE and Docker auth still time out with both services
+running and return 200 with either service stopped. Cloudflare also failed
+with both services stopped in this run, so it is not a stable control.
+
+Further read-only probes found:
+
+- DNS-pinned LE still stalls immediately after ClientHello.
+- All three HTTPS targets return 200 in three consecutive SOCKS proxy runs
+  with both services active; ordinary TUN/direct requests still time out.
+- `ip -4 route get 172.65.32.248 mark 0x40000000` selects `tun0`, whereas
+  adding `oif enp5s0` selects the physical gateway.
+- nfqws2 logs show `initializing raw sockets bind-fix4=0 bind-fix6=0`.
+- An isolated local user/network namespace reproduced Linux routing a marked
+  `IPPROTO_RAW` packet into the simulated TUN despite the physical source
+  address in its IP header. `SO_BINDTODEVICE` sent it through the simulated
+  uplink instead. This demonstrates the routing mechanism, not live recovery.
+
+Upstream documents `--bind-fix4` and `--bind-fix6` for generated packets
+leaving via the wrong interface under policy routing. Its raw-send code
+only uses the queued outgoing interface when these flags are enabled:
+[manual](https://github.com/bol-van/zapret2/blob/master/docs/manual.en.md#full-list-of-options),
+[raw-send implementation](https://github.com/bol-van/zapret2/blob/master/nfq2/darkmagic.c).
+The pinned 1.0.5.2 binary accepts both flags in `--dry-run --qnum=200`.
+
+The follow-up configuration adds both flags through
+`services.zapret2.extraOptions` on mimosa and retains the physical-interface
+filter. This addresses raw reinjection routing in addition to double
+queueing. **Live recovery remains unverified until user activation.**
+Confirm `bind-fix4=1 bind-fix6=1` in the startup log, repeat the ordinary
+non-proxy probes below three times, and then check Traefik ACME.
+The SSH account cannot perform privileged diagnostics without a sudo
+password; agents must not activate NixOS themselves.
+
 ## What is broken
 
 All HTTPS/TCP-443 connections from mimosa to destinations matched by the

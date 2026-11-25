@@ -76,15 +76,24 @@ the generated rules to the physical uplink: `oifname` in postrouting and
 `iifname` in prerouting, for both TCP and UDP (IPv4 and IPv6). Traffic
 entering or leaving sing-box's `tun0` is therefore excluded; the connection
 re-originated by sing-box still gets desynchronized on the physical wire.
-Without this filter, fake/split packets also reach the TUN userspace TCP
-stack, causing HTTPS timeouts. Keep this host-specific interface list in
-sync with the uplink if it changes. Acrux has no TUN and keeps the default
-all-interface rules.
+Keep this host-specific interface list in sync with the uplink if it
+changes. Acrux has no TUN and keeps the default all-interface rules.
+
+The interface filter alone did not fix mimosa's HTTPS timeouts. The host
+also sets `services.zapret2.extraOptions = [ "--bind-fix4" "--bind-fix6" ]`.
+These upstream flags bind generated raw packets to the queued packet's
+outgoing interface. Without them, Linux performs a fresh route lookup for
+the raw socket; sing-box's policy routing can send replacement segments and
+fakes back into `tun0`, even though the original socket was bound to
+`enp5s0`. The zapret desync mark prevents requeueing, but does not bypass
+sing-box's routing rules. See the upstream
+[nfqws2 options](https://github.com/bol-van/zapret2/blob/master/docs/manual.en.md#full-list-of-options).
 
 After activation by the user, verify with both `sing-box` and
 `nfqws2@default` running using the probes and ACME certificate checks in
 `docs/handoff-cf443-tun-zapret.md`. Evaluation and dry-build checks cannot
-confirm the live HTTPS result.
+confirm the live HTTPS result. Check `journalctl -u nfqws2@default -b` for
+`initializing raw sockets bind-fix4=1 bind-fix6=1` before testing.
 
 ## Importing strategies
 

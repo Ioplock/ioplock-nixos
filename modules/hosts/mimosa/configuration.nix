@@ -242,7 +242,15 @@
       # Desynchronize only on the physical uplink: queueing tun0 would also
       # feed fake/split packets into sing-box's userspace TCP stack. Upstream
       # applies this filter to both postrouting (oifname) and prerouting (iifname).
-      services.zapret2.firewall.interfaces = [ "enp5s0" ];
+      services.zapret2 = {
+        firewall.interfaces = [ "enp5s0" ];
+        # Raw replacement packets need the queued packet's outgoing interface;
+        # otherwise sing-box's policy routing sends them back into tun0.
+        extraOptions = [
+          "--bind-fix4"
+          "--bind-fix6"
+        ];
+      };
 
       # ==================================================
       # Monitoring
