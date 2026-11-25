@@ -239,6 +239,11 @@
       # go through `proxy`; remaining TUN traffic stays `direct`.
       myModioSplit.enable = true;
 
+      # Desynchronize only on the physical uplink: queueing tun0 would also
+      # feed fake/split packets into sing-box's userspace TCP stack. Upstream
+      # applies this filter to both postrouting (oifname) and prerouting (iifname).
+      services.zapret2.firewall.interfaces = [ "enp5s0" ];
+
       # ==================================================
       # Monitoring
       # ==================================================

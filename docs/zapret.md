@@ -71,6 +71,21 @@ Setup decided at module level:
   itself (`configureAutomatically = true` by default, which asserts
   `networking.nftables.enable` — both hosts satisfy this).
 
+On mimosa, `services.zapret2.firewall.interfaces = [ "enp5s0" ]` restricts
+the generated rules to the physical uplink: `oifname` in postrouting and
+`iifname` in prerouting, for both TCP and UDP (IPv4 and IPv6). Traffic
+entering or leaving sing-box's `tun0` is therefore excluded; the connection
+re-originated by sing-box still gets desynchronized on the physical wire.
+Without this filter, fake/split packets also reach the TUN userspace TCP
+stack, causing HTTPS timeouts. Keep this host-specific interface list in
+sync with the uplink if it changes. Acrux has no TUN and keeps the default
+all-interface rules.
+
+After activation by the user, verify with both `sing-box` and
+`nfqws2@default` running using the probes and ACME certificate checks in
+`docs/handoff-cf443-tun-zapret.md`. Evaluation and dry-build checks cannot
+confirm the live HTTPS result.
+
 ## Importing strategies
 
 Run this whenever the content in a zapret-cfg checkout changes (strategies,
